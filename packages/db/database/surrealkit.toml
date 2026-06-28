@@ -1,0 +1,19 @@
+# surrealkit project layout for the local data engine.
+#
+# surrealkit speaks SurrealDB's HTTP API (consistent with the HTTP-only rule).
+# `schema/` holds the merged DEFINE statements; `rollouts/` holds reviewed
+# expand/contract migration manifests; `seed/` holds idempotent seed data.
+#
+# Migration discipline on user data:
+#   - `rollout start`    applies the non-destructive expansion phase.
+#   - `rollout complete` applies the destructive contract phase; defer and guard
+#                        it until after the application has cut over.
+#   - never run the destructive dev reconciler (`sync`) against user data; it
+#     prunes removed objects immediately and is for disposable databases only.
+#
+# Durable on-disk persistence (surrealkv://<data-dir>) is not yet validated end
+# to end and is exercised only as an operator drill, never in CI. CI runs the
+# in-memory backend.
+
+[schema]
+dir = "schema"

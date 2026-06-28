@@ -11,13 +11,20 @@
     },
     "./documents": "./src/documents.ts",
     "./documents.local": "./src/documents.local.ts",
-    "./documents.cloud": "./src/documents.cloud.ts"
+    "./documents.cloud": "./src/documents.cloud.ts",
+    "./surreal-http": "./src/surreal-http.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
   },
+  "dependencies": {
+    "@perry-starter/db": "workspace:*",
+    "@perry-starter/env": "workspace:*"
+  },
   "devDependencies": {
     "@perry-starter/config": "workspace:*",
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

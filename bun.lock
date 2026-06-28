@@ -180,9 +180,15 @@
     "packages/data": {
       "name": "@perry-starter/data",
       "version": "0.0.0",
+      "dependencies": {
+        "@perry-starter/db": "workspace:*",
+        "@perry-starter/env": "workspace:*",
+      },
       "devDependencies": {
         "@perry-starter/config": "workspace:*",
+        "@types/node": "catalog:",
         "typescript": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/db": {

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./src/document-record.ts",
     "./shapes/delta-envelope": "./src/shapes/delta-envelope.ts",
     "./shapes/document-projection": "./src/shapes/document-projection.ts",
     "./shapes/audit-entry": "./src/shapes/audit-entry.ts",

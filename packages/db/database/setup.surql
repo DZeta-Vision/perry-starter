@@ -1,0 +1,5 @@
+-- Idempotent bootstrap applied before the schema. Intentionally empty for now:
+-- the namespace and database are selected per connection via the surreal-ns /
+-- surreal-db headers, and the documents schema in schema/documents.surql carries
+-- the access definition and table shapes. Place only idempotent, non-destructive
+-- bootstrap statements here.
