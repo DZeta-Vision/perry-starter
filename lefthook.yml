@@ -1,10 +1,29 @@
 # Lefthook configuration
 # https://github.com/evilmartians/lefthook
+#
+# LOCAL convenience only — bypassable with `git commit --no-verify` (FR-54).
+# CI (.github/workflows/ci.yml) is the AUTHORITATIVE, non-bypassable gate; the
+# same commands re-run there to actually block a merge (AD-17). Never rely on
+# Lefthook to enforce anything — it is fast local feedback, nothing more.
 
 pre-commit:
   parallel: true
   jobs:
-    # Add your pre-commit commands here
-    # Example:
-    # - name: lint
-    #   run:  lint
+    # Ultracite/Biome format + lint. `bun run check` runs across the repo;
+    # depth (extends-only config, the TanStack route-filename caveat) is owned
+    # by the biome-ultracite layer.
+    - name: check
+      run: bun run check
+      glob: "*.{js,jsx,ts,tsx,json,jsonc,css}"
+
+pre-push:
+  parallel: false
+  jobs:
+    # Types must resolve before a push (tsc via Turbo).
+    - name: check-types
+      run: bun run check-types
+    # Vitest run (web + node projects). Coverage thresholds are intentionally
+    # NOT enforced yet (no tests) — CI carries the TODO to enforce them once
+    # packages/* tests land.
+    - name: test
+      run: bun run test

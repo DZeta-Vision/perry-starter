@@ -20,7 +20,8 @@
       "@vitest/ui": "4.1.8",
       "@vitest/coverage-v8": "4.1.8",
       "@playwright/test": "^1.61.0",
-      "playwright": "^1.61.0"
+      "playwright": "^1.61.0",
+      "@axe-core/playwright": "^4.10.0"
     }
   },
   "type": "module",
@@ -29,8 +30,13 @@
     "build": "turbo build",
     "check-types": "turbo check-types",
     "dev:web": "turbo -F web dev",
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test",
     "check": "ultracite check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "gate:contrast": "node scripts/contrast-gate.mjs",
+    "gate:meta": "node scripts/meta-gate.mjs"
   },
   "dependencies": {
     "@perry-starter/env": "workspace:*",
@@ -38,14 +44,21 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
     "@biomejs/biome": "2.5.0",
     "@cloudflare/workers-types": "^4.20260621.1",
     "@perry-starter/config": "workspace:*",
+    "@playwright/test": "catalog:",
     "@types/node": "catalog:",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "catalog:",
+    "jsdom": "catalog:",
     "lefthook": "latest",
+    "playwright": "catalog:",
     "turbo": "^2.9.18",
     "typescript": "catalog:",
-    "ultracite": "7.8.3"
+    "ultracite": "7.8.3",
+    "vitest": "catalog:"
   },
   "overrides": {
     "kysely": "0.28.17"

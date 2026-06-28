@@ -1,0 +1,193 @@
+# perry-starter — authoritative CI pipeline (AD-17).
+#
+# This is the NON-BYPASSABLE gate. Lefthook (lefthook.yml) runs a subset locally
+# for fast feedback but is bypassable (`git commit --no-verify`); the gates that
+# actually block a merge live here (FR-54).
+#
+# Gate status legend:
+#   BLOCKING-today  — real, runs now, failure blocks the merge.
+#   STRUCTURE       — wired but non-blocking; becomes blocking when its target
+#                     package lands or its [UNVALIDATED — S7] spike closes.
+#
+# Provenance: skills/ci-gates/SKILL.md (AD-17 gate set);
+# _bmad-output/.../test-design-system-2026-06-25.md (Part 4.1 gate->level map, R-008 meta-gate).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # quality (BLOCKING) — universal lint/format/type gates + secret scan.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: quality (lint, types, secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Gitleaks needs full history to scan the whole push range.
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Ultracite/Biome (biome-ultracite owns the depth).
+      - name: Lint + format check
+        run: bun run check
+
+      # tsc across the monorepo via Turbo (turborepo-bun owns the task carrier).
+      - name: Type check
+        run: bun run check-types
+
+      # Secret scan (BLOCKING). gitleaks-action exits non-zero on any finding.
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # TODO: commitlint (conventional commits, FR-54). Add once
+      # commitlint.config.* lands; run `bunx commitlint` over the PR commit
+      # range. Left out here rather than wired against a non-existent config.
+      # - name: Commitlint
+      #   run: bunx commitlint --from origin/${{ github.base_ref }} --to HEAD
+
+  # ---------------------------------------------------------------------------
+  # unit (BLOCKING) — Vitest run (web + node projects), coverage via v8.
+  # ---------------------------------------------------------------------------
+  unit:
+    name: unit (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Vitest run
+        run: bun run test
+      # TODO: enforce --coverage.thresholds when packages/* tests land.
+      # Coverage is collected (v8, root vitest.config.ts) but NOT gated today —
+      # 0% with no tests would fail a threshold gate vacuously (test-design:
+      # "set at CI step, do not guess").
+
+  # ---------------------------------------------------------------------------
+  # a11y-and-contrast (BLOCKING for contrast; a11y e2e is STRUCTURE today).
+  # ---------------------------------------------------------------------------
+  a11y-and-contrast:
+    name: a11y + contrast
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # BLOCKING-today: WCAG-AA contrast gate over apps/web/src/index.css tokens,
+      # both themes. Real colour math; exits non-zero on any sub-threshold pair.
+      - name: WCAG-AA contrast gate
+        run: node scripts/contrast-gate.mjs
+
+      # STRUCTURE: full-route a11y gate (axe fixture, AD-33). Routes/auth are not
+      # headlessly testable until apps/daemon boots in CI, so this is allowed to
+      # fail without blocking. The contrast gate above stays BLOCKING.
+      # TODO: drop continue-on-error and make this blocking once the app boots
+      # in CI (apps/daemon loopback or a web-target dev server).
+      - name: Install Playwright (chromium)
+        run: bunx playwright install --with-deps chromium
+        continue-on-error: true
+      - name: Full-route a11y (axe)
+        run: bun run test:e2e
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # meta-gate (BLOCKING) — R-008 anti-vacuous enforcer.
+  # ---------------------------------------------------------------------------
+  meta-gate:
+    name: meta-gate (mutation-twin enforcer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Every *.gate.test.ts must ship a sibling *.mutation.test.ts or CI fails.
+      # Zero gates today => exits 0 (structure ready). Becomes a live blocker the
+      # moment a gate file lands without its twin.
+      - name: Meta-gate
+        run: node scripts/meta-gate.mjs
+
+  # ---------------------------------------------------------------------------
+  # conformance-gates (STRUCTURE-READY, non-blocking today).
+  # ---------------------------------------------------------------------------
+  #
+  # The `node` Vitest project glob is ready but matches nothing until the
+  # packages below exist. This job MUST NOT fail CI today. Each TODO names the
+  # AD-17 conformance gate to author and the owning package; the [UNVALIDATED —
+  # S7] scanner gates are tracked separately and also must not block yet.
+  #
+  # AD-17 conformance gates to author per package (test bodies owned by
+  # vitest-playwright; ci-gates wires them):
+  #   - delta-envelope / shared-data-shape / single-ownership  -> packages/db
+  #       (cursor is server-assigned int, never client ULID/clock; one writer
+  #        owns every projection column incl. the embedding — AD-6/22)
+  #   - cross-layer RBAC role-parity                            -> packages/auth
+  #       (tRPC .use() matrix == SurrealDB PERMISSIONS, single-sourced — AD-9)
+  #   - cursor / SyncStatus truth-table                         -> packages/sync
+  #       (3-state integer-cursor predicate; UI must not re-derive — AD-22)
+  #   - AG-UI event-subset / locale-parity / splice            -> packages/ai
+  #       (frames parse against @ag-ui/core@0.0.52; toolCallName not toolName;
+  #        monotonic concatenation under one messageId — AD-10/NFR-14)
+  #   - response-invariance / anti-enum                         -> packages/auth
+  #       (20-cell cross-surface byte+timing identity — AD-28)
+  #
+  # [UNVALIDATED — S7] scanner/build-gate family (TODO, will become BLOCKING):
+  #   - manifest-diff gate        (perry --print-api-manifest vs baseline — FR-55)
+  #   - tier-boundary build guard (daemon closure denylist incl. transitive
+  #       @electric-sql/pglite + WASM + non-literal dynamic import — AD-3/24)
+  #   - AD-20 read-path AST guard (no full-list client render/sort; no OFFSET)
+  #   - FR-13 mis-tier structural guard (no concrete *.cloud.ts/*.local.ts import
+  #       into app/UI/auth; admin never reads via an auth-only tier — AD-24)
+  #   - EXPLAIN index-coverage plan-shape + p99 perf budget (FR-56/NFR-10;
+  #       EXPLAIN operator vocabulary NOT grounded at pin — derive from upstream)
+  #   - per-dependency compile-AND-run matrix (perry compile + runtime assert;
+  #       perry check is a non-blocking pre-filter only — AD-4; Linux x64 only)
+  conformance-gates:
+    name: conformance-gates (structure-ready)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Runs the `node` Vitest project (packages/*) once gate tests exist. Today
+      # it matches nothing; `--passWithNoTests` keeps the job green (structure
+      # ready, not a vacuous pass — the meta-gate enforces twins separately).
+      # When packages land, drop --passWithNoTests and gate on the suite above.
+      - name: Conformance suite (node project)
+        run: bunx vitest run --project node --passWithNoTests

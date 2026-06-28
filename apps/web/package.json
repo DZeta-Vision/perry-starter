@@ -57,6 +57,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "catalog:",
     "@cloudflare/vite-plugin": "^1.42.1",
     "@perry-starter/config": "workspace:*",
     "@playwright/test": "catalog:",
