@@ -54,7 +54,9 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          include: ["packages/**/*.test.ts"],
+          // packages/* conformance gates + the repo-root scripts/* gates
+          // (rename/remove-reference/thin-scope) which also run as node:fs gates.
+          include: ["packages/**/*.test.ts", "scripts/**/*.test.ts"],
           env: inRepoEnv,
         },
       },

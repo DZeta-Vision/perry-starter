@@ -28,7 +28,12 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 
 // Roots to scan for conformance-gate test files.
-const SCAN_ROOTS = ["packages", join("apps", "web"), join("apps", "daemon")];
+const SCAN_ROOTS = [
+  "packages",
+  join("apps", "web"),
+  join("apps", "daemon"),
+  "scripts",
+];
 
 // Directories never worth descending into.
 const SKIP_DIRS = new Set([
