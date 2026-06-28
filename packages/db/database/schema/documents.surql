@@ -1,10 +1,12 @@
 -- Merged local data-engine schema for the documents entity.
 --
--- Driven over SurrealDB's HTTP API only. Every user-data table declares explicit
--- row-level PERMISSIONS scoped to the authenticated record ($auth) so that a
--- scoped, non-root session can never read or mutate another owner's rows. The
--- bootstrap root credential is used for this DDL only; per-request queries run
--- through a scoped record-access session whose $auth is the matched user record.
+-- Driven over SurrealDB's HTTP API only. Every table declares an explicit
+-- row-level PERMISSIONS clause (none is left to the implicit default): owner-data
+-- tables scope to the authenticated record ($auth) so a scoped, non-root session
+-- can never read or mutate another owner's rows, while the credential table and
+-- the delta-log are sealed PERMISSIONS NONE. The bootstrap root credential is
+-- used for this DDL only; per-request queries run through a scoped record-access
+-- session whose $auth is the matched user record.
 
 -- Record-access perimeter: a per-session credential whose $auth is a user record
 -- (not a coarse system user). Sign-up registers a user; sign-in authenticates an
@@ -13,6 +15,21 @@ DEFINE ACCESS account ON DATABASE TYPE RECORD
   SIGNUP ( CREATE user SET email = $email, pass = crypto::argon2::generate($pass) )
   SIGNIN ( SELECT * FROM user WHERE email = $email AND crypto::argon2::compare(pass, $pass) )
   DURATION FOR TOKEN 18m, FOR SESSION 12h;
+
+-- The credential table is sealed to record-access sessions: PERMISSIONS NONE
+-- means no scoped session can read or mutate any credential row, so one user can
+-- never read another user's email/argon2 hash. Sign-up's CREATE and sign-in's
+-- SELECT run in the access definition's privileged context, which bypasses table
+-- PERMISSIONS, so registration and authentication still work end to end while a
+-- scoped session reads []. Declared explicitly (not left to the implicit default)
+-- so the table cannot escape the permissions audit. SCHEMAFULL pins the shape to
+-- exactly the two credential fields; the unique email index requires email to be
+-- a defined field under SCHEMAFULL. This table definition follows the access
+-- block (which establishes the namespace/database) and precedes the index (a
+-- bare index would otherwise auto-create the credential table schemaless+open).
+DEFINE TABLE user SCHEMAFULL PERMISSIONS NONE;
+DEFINE FIELD email ON user TYPE string;
+DEFINE FIELD pass ON user TYPE string;
 
 DEFINE INDEX user_email ON user FIELDS email UNIQUE;
 

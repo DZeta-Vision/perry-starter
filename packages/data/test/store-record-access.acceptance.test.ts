@@ -21,7 +21,20 @@ const HEALTH_MAX_ATTEMPTS = 50;
 const SURREAL_NS = "perry";
 const SURREAL_DB = "perry";
 const REPO_DATA_SRC = join(process.cwd(), "packages", "data", "src");
-const BEARER_RE = /Bearer\s+\$\{?\w+/;
+
+// Comment-resistant source guard: a bare `// Bearer ${token}` line must not
+// satisfy this, and a root-cred read must not hide behind a comment. The check
+// runs over comment-stripped code.
+const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
+const LINE_COMMENT_RE = /(^|[^:])\/\/.*$/gm;
+const stripJsComments = (source: string): string =>
+  source.replace(BLOCK_COMMENT_RE, "").replace(LINE_COMMENT_RE, "$1");
+const BEARER_AUTH_RE = /kind\s*:\s*["']bearer["']/;
+const ROOT_CREDENTIAL_RES = [/\bSURREAL_USER\b/, /\bSURREAL_PASS\b/] as const;
+const readsRootCredential = (source: string): boolean => {
+  const code = stripJsComments(source);
+  return ROOT_CREDENTIAL_RES.some((re) => re.test(code));
+};
 
 interface Sidecar {
   readonly stop: () => void;
@@ -205,15 +218,16 @@ test("a root/Basic cred bypasses row-level PERMISSIONS and leaks a foreign row â
     );
     expect((leaked[0].result as unknown[]).length).toBe(1);
 
-    // Source guard: the per-request query path in `documents.local.ts` uses a
-    // Bearer session token; the root/Basic cred is not used there. Switching
-    // the impl's query cred to root would make the isolation assertion above
-    // leak.
-    const localSource = readFileSync(
-      join(REPO_DATA_SRC, "documents.local.ts"),
-      "utf8"
+    // Source guard: the per-request query path in `documents.local.ts` selects a
+    // Bearer (record-access) session and never reads the root credentials.
+    // Switching the impl's query cred to root would make the isolation assertion
+    // above leak. Asserted over comment-stripped code so a stray comment can
+    // neither satisfy the Bearer check nor smuggle a root-cred read past it.
+    const localSource = stripJsComments(
+      readFileSync(join(REPO_DATA_SRC, "documents.local.ts"), "utf8")
     );
-    expect(BEARER_RE.test(localSource)).toBe(true);
+    expect(BEARER_AUTH_RE.test(localSource)).toBe(true);
+    expect(readsRootCredential(localSource)).toBe(false);
   } finally {
     sidecar.stop();
   }
