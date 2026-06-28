@@ -186,7 +186,9 @@
       },
       "devDependencies": {
         "@perry-starter/config": "workspace:*",
+        "@types/node": "catalog:",
         "typescript": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/config": {
