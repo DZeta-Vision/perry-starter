@@ -1,51 +1,33 @@
 // Acceptance suite — cross-cutting conformance gates.
-//   - the documents reference entity is domain-neutral (no domain coupling);
 //   - the canonical shapes are hand-authored runtime Zod, not generated types;
 //   - the gates are anti-vacuous: every gate ships its mutation twin (meta-gate);
 //   - naming conventions hold: snake_case keys, ISO timestamps, ULID ids.
 //
+// The domain-neutrality source scan and the typegen-import source guard are
+// owned by their named, twin-paired gates under src/conformance — they are no
+// longer duplicated here.
+//
 // The canonical shapes are imported dynamically; top-level imports are limited to
-// vitest + node builtins. The source/FS scans target packages/db/src.
+// vitest + node builtins. The FS pairing scan targets packages/db/src.
 
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // packages/db/test
 const DB_SRC = resolve(HERE, "..", "src"); // packages/db/src
-const DB_SHAPES = resolve(DB_SRC, "shapes"); // packages/db/src/shapes
 const REPO_ROOT = resolve(HERE, "..", "..", ".."); // repo root
 const META_GATE = resolve(REPO_ROOT, "scripts", "meta-gate.mjs");
 
 // ── Top-level regex literals (never built in a loop) ───────────────────────────
 const SNAKE_CASE_KEY = /^[a-z][a-z0-9_]*$/;
-const TS_FILE = /\.ts$/;
-// Forbidden domain-coupling token set (case-insensitive, word-boundaried).
-const FORBIDDEN_DOMAIN_TOKENS = [
-  /\bgmc\b/i,
-  /\bmaths-club\b/i,
-  /\bmaths_club\b/i,
-  /\bnote\b/i,
-] as const;
-// A source line that wires a generated typegen artifact as a source of truth.
-const TYPEGEN_IMPORT = /from\s+["'][^"']*(?:surrealkit|typegen)[^"']*["']/i;
 
 const GATE_SUFFIX = ".gate.test.ts";
 const MUTATION_SUFFIX = ".mutation.test.ts";
 
-// ── Pure detectors (used in BOTH directions: clean source + mutated fixture) ───
-const findForbiddenTokens = (source: string): string[] => {
-  const hits: string[] = [];
-  for (const re of FORBIDDEN_DOMAIN_TOKENS) {
-    if (re.test(source)) {
-      hits.push(re.source);
-    }
-  }
-  return hits;
-};
-
+// ── Pure detectors ─────────────────────────────────────────────────────────────
 const isRuntimeValidator = (candidate: unknown): boolean => {
   const shape = candidate as { parse?: unknown; safeParse?: unknown } | null;
   return (
@@ -105,7 +87,9 @@ const importAllShapes = async () => {
 
 // ──────────────────────────────────────────────────────────────────────────────
 describe("documents reference entity is domain-neutral", () => {
-  test("the generic documents entity parses and packages/db/src is free of domain-coupling tokens", async () => {
+  // The source-level neutrality scan lives in domain-neutrality.gate.test.ts;
+  // here we assert the schema-level guarantee only.
+  test("the generic documents entity parses with domain-neutral snake_case fields", async () => {
     const mod = await import("@perry-starter/db/documents");
     const documentsEntitySchema = mod.documentsEntitySchema;
     expect(
@@ -116,25 +100,6 @@ describe("documents reference entity is domain-neutral", () => {
         body_preview: "A generic document body preview.",
       }).success
     ).toBe(true);
-    // Source guard: zero forbidden tokens across packages/db/src/**.
-    const hits: string[] = [];
-    for (const file of walk(DB_SRC, (name) => TS_FILE.test(name))) {
-      hits.push(...findForbiddenTokens(readFileSync(file, "utf8")));
-    }
-    expect(hits).toEqual([]);
-  });
-
-  test("the source-guard detector flags a forbidden 'maths-club' token (anti-vacuous)", () => {
-    // The detector must actually FIRE on coupling.
-    expect(
-      findForbiddenTokens('export const k = "maths-club";').length
-    ).toBeGreaterThan(0);
-    expect(findForbiddenTokens("const gmc = 1;").length).toBeGreaterThan(0);
-    expect(
-      findForbiddenTokens("type Coupled = { maths_club: string };").length
-    ).toBeGreaterThan(0);
-    // Clean source produces zero hits — proves it is not always-true.
-    expect(findForbiddenTokens("export const title = 'doc';")).toEqual([]);
   });
 
   test("the schema rejects a fixture carrying a domain-coupled field", async () => {
@@ -166,21 +131,6 @@ describe("canonical shapes are hand-authored runtime Zod", () => {
     const interfaceStandIn = { doc_id: "string", scope_user_id: "string" };
     expect(isRuntimeValidator(interfaceStandIn)).toBe(false);
     expect(isRuntimeValidator({})).toBe(false);
-  });
-
-  test("the source guard rejects a wired typegen import and packages/db/src/shapes wires none", () => {
-    // An import of a generated typegen module is flagged.
-    expect(
-      TYPEGEN_IMPORT.test(
-        'import type { Doc } from "../generated/surrealkit-typegen";'
-      )
-    ).toBe(true);
-    // A hand-authored zod import must NOT be flagged.
-    expect(TYPEGEN_IMPORT.test('import { z } from "zod";')).toBe(false);
-    // No shapes module wires a generated artifact as its source.
-    for (const file of walk(DB_SHAPES, (name) => TS_FILE.test(name))) {
-      expect(TYPEGEN_IMPORT.test(readFileSync(file, "utf8"))).toBe(false);
-    }
   });
 });
 

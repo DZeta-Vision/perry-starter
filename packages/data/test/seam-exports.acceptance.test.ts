@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
@@ -98,4 +99,101 @@ test("apps/web source imports only the @perry-starter/data seam, never a concret
   // branch makes one of these arrays non-empty and turns the test red.
   expect(concreteImporters).toEqual([]);
   expect(runtimeBranchers).toEqual([]);
+});
+
+// --- LIVE conditional resolution of the "." entry --------------------------
+//
+// The above tests read the export-map STRINGS. These tests prove the build seam
+// actually resolves: a child `bun` process selects the "." entry under each
+// build condition and reports both the file it resolved to AND the impl's
+// resolution sentinel. perry-local must land on the *.local.ts impl, perry-cloud
+// on the *.cloud.ts impl, and each condition must physically exclude the other
+// impl's file.
+
+const SECRET_MIN_LENGTH = 32;
+const RESOLVED_PREFIX = "PERRY_RESOLVED=";
+const SENTINEL_PREFIX = "PERRY_SENTINEL=";
+
+// The local data impl validates the server env contract eagerly at import, so
+// the child process is handed a minimal valid env.
+const CHILD_ENV: Record<string, string | undefined> = {
+  ...process.env,
+  PERRY_TARGET: "local-sidecar",
+  SURREAL_URL: "http://127.0.0.1:8000",
+  SURREAL_NS: "perry",
+  SURREAL_DB: "perry",
+  SURREAL_USER: "root",
+  SURREAL_PASS: "root",
+  BETTER_AUTH_SECRET: "x".repeat(SECRET_MIN_LENGTH),
+  BETTER_AUTH_URL: "http://127.0.0.1:3000",
+  CORS_ORIGIN: "http://127.0.0.1:3000",
+};
+
+const bunBinary = (): string => {
+  const bunInstall = process.env.BUN_INSTALL;
+  if (bunInstall) {
+    const candidate = join(bunInstall, "bin", "bun");
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return "bun";
+};
+
+interface DotResolution {
+  resolvedPath: string;
+  sentinel: string;
+}
+
+// Resolve and import the package "." entry inside a child `bun` process running
+// under a SINGLE `--conditions` value, returning the file "." resolved to and
+// the resolved impl's `__IMPL__` sentinel.
+const resolveDotUnderCondition = (
+  packageName: string,
+  condition: string
+): DotResolution => {
+  const childProgram = [
+    `const resolved = import.meta.resolve(${JSON.stringify(packageName)});`,
+    `const mod = await import(${JSON.stringify(packageName)});`,
+    `process.stdout.write(${JSON.stringify(RESOLVED_PREFIX)} + resolved + "\\n");`,
+    `process.stdout.write(${JSON.stringify(SENTINEL_PREFIX)} + String(mod.__IMPL__) + "\\n");`,
+  ].join("");
+
+  const output = execFileSync(
+    bunBinary(),
+    [`--conditions=${condition}`, "-e", childProgram],
+    { cwd: REPO_ROOT, env: CHILD_ENV, encoding: "utf8" }
+  );
+
+  const lines = output.split("\n");
+  const resolvedLine = lines.find((line) => line.startsWith(RESOLVED_PREFIX));
+  const sentinelLine = lines.find((line) => line.startsWith(SENTINEL_PREFIX));
+  return {
+    resolvedPath: resolvedLine?.slice(RESOLVED_PREFIX.length) ?? "",
+    sentinel: sentinelLine?.slice(SENTINEL_PREFIX.length) ?? "",
+  };
+};
+
+const SEAM_PACKAGES = [
+  { name: "@perry-starter/data", base: "documents" },
+  { name: "@perry-starter/ai", base: "assistant" },
+];
+
+test("the '.' export resolves the matching impl LIVE under each build condition and physically excludes the unselected impl (data + ai)", () => {
+  for (const pkg of SEAM_PACKAGES) {
+    const local = resolveDotUnderCondition(pkg.name, "perry-local");
+    // perry-local lands on the local impl, by both sentinel and resolved file.
+    expect(local.sentinel).toBe("local");
+    expect(local.resolvedPath.endsWith(`${pkg.base}.local.ts`)).toBe(true);
+    // The cloud file is not what "." resolves to — physically excluded.
+    expect(local.resolvedPath.includes(`${pkg.base}.cloud.ts`)).toBe(false);
+
+    const cloud = resolveDotUnderCondition(pkg.name, "perry-cloud");
+    expect(cloud.sentinel).toBe("cloud");
+    expect(cloud.resolvedPath.endsWith(`${pkg.base}.cloud.ts`)).toBe(true);
+    expect(cloud.resolvedPath.includes(`${pkg.base}.local.ts`)).toBe(false);
+
+    // The two conditions resolve PHYSICALLY DISTINCT files.
+    expect(local.resolvedPath).not.toBe(cloud.resolvedPath);
+  }
 });
