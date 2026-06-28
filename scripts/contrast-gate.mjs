@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// AD-17 WCAG-AA contrast gate (RUNNABLE NOW, BLOCKING).
+// WCAG-AA contrast gate (RUNNABLE NOW, BLOCKING).
 //
 // Parses apps/web/src/index.css, extracts the load-bearing design-token pairs in
 // BOTH themes (:root = light, .dark = dark), resolves each oklch() color to sRGB,
 // computes the WCAG 2.x contrast ratio, prints the measured ratio for every pair
-// (AD-17 requirement: "measured ratio recorded"), and EXITS NON-ZERO if any
+// (the measured ratio is recorded), and EXITS NON-ZERO if any
 // required pair is below its threshold.
 //
 // Dependency-free and deterministic. Implements the full colour pipeline here:
 //   oklch (L, C, H)  ->  OKLab  ->  linear sRGB  ->  gamma sRGB  ->  relative
 //   luminance  ->  WCAG contrast ratio.
 //
-// Thresholds (DESIGN.md / EXPERIENCE Accessibility Floor, AD-33):
+// Thresholds (the accessibility floor):
 //   - primary <-> primary-foreground            >= 4.5:1  (text on the brand fill)
 //   - primary-as-link <-> background            >= 4.5:1  (teal used as a link/active colour)
 //   - focus-ring (ring) <-> background           >= 3:1   (non-text UI / focus indicator, WCAG 1.4.11)
@@ -273,7 +273,7 @@ const main = () => {
     { name: "dark", selector: ".dark" },
   ];
 
-  process.stdout.write("AD-17 WCAG-AA contrast gate — measured ratios:\n");
+  process.stdout.write("WCAG-AA contrast gate — measured ratios:\n");
 
   let failures = 0;
   let evaluated = 0;

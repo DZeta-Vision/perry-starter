@@ -1,9 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test as base, expect } from "@playwright/test";
 
-// Reusable accessibility fixture backing the AD-33 floor + the AD-17 full-route
-// accessibility-behavior gate (bmad-testarch-ci wires it to run over the whole
-// apps/web route inventory). Scans the current page against WCAG 2.0/2.1/2.2 A+AA
+// Reusable accessibility fixture for the full-route accessibility gate (run in
+// CI over the whole apps/web route inventory). Scans the current page against
+// WCAG 2.0/2.1/2.2 A+AA
 // and asserts zero violations.
 // Consumers import the extended `test` from here and `expect` from
 // "@playwright/test" directly (no barrel re-export, per Ultracite).
