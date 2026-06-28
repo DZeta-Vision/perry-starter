@@ -77,3 +77,7 @@ This repo ships a **campaign-verified skill set** that grounds the pre-1.0 stack
 
 Each skill is pinned to a commit; spike-gated capabilities are tagged `[UNVALIDATED -- S#]`. Honor the Perry integration law (no in-process SDK/WASM/prebuilt-JS in the daemon; HTTP + native fetch + supervised sidecars).
 <!-- SKF-CAMPAIGN:perry-starter-impl END -->
+
+## Codebase conventions
+
+**Keep committed code BMAD-agnostic.** Tracked source, tests, comments, and tracked docs must contain **no** references to BMAD planning artifacts — no `AD-##`, `NFR-##`, `FR-##`, `Story`/story-key, or risk ids (`E1-R##`), and no pointers into the gitignored BMAD dirs (`_bmad-output/`, `_bmad/`, `skills/`, `forge-data/`). Those dirs are gitignored and may be deleted at any moment, and the references mean nothing to anyone who just clones the repo. Name tests by the behavior they assert ("rejects a root credential that bypasses row permissions"), not by an AC/risk id. Keep AC→test→risk traceability only in the gitignored TEA artifacts (atdd-checklists, traceability matrix) and story files — never leak it into tracked code.
