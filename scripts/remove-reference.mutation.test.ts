@@ -10,6 +10,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -37,6 +38,47 @@ const scanText = (source: string): string[] =>
   DOC_REFERENCE_PATTERNS.filter((pattern) => pattern.test(source)).map(
     (pattern) => pattern.source
   );
+
+// The gate's meta-tooling exclusion (kept in sync with the gate). It must be
+// EXACTLY the rename/removal machinery — nothing in the product surface.
+const META_TOOLING = new Set([
+  "scripts/rename.mjs",
+  "scripts/remove-reference.mjs",
+  "scripts/rename-manifest.mjs",
+  "scripts/rename.gate.test.ts",
+  "scripts/rename.mutation.test.ts",
+  "scripts/remove-reference.gate.test.ts",
+  "scripts/remove-reference.mutation.test.ts",
+  "scripts/thin-rename-scope.gate.test.ts",
+  "scripts/thin-rename-scope.mutation.test.ts",
+]);
+
+// A path-aware mirror of the gate's product-surface scan: scan every file
+// except the excluded meta-tooling.
+const walkAll = (dir: string, out: string[]): void => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      walkAll(join(dir, entry.name), out);
+    } else if (entry.isFile()) {
+      out.push(join(dir, entry.name));
+    }
+  }
+};
+
+const findProductDocRefs = (treeRoot: string): string[] => {
+  const files: string[] = [];
+  walkAll(treeRoot, files);
+  const hits: string[] = [];
+  for (const file of files) {
+    if (META_TOOLING.has(file.slice(treeRoot.length + 1))) {
+      continue;
+    }
+    if (scanText(readFileSync(file, "utf8")).length > 0) {
+      hits.push(file.slice(treeRoot.length + 1));
+    }
+  }
+  return hits;
+};
 
 // A minimal mirror of the gate's workspace resolver: a `@perry-starter/data`
 // subpath import resolves only if the data package's `exports` still lists it.
@@ -105,6 +147,28 @@ describe("the documents-removal gate genuinely goes red on bad input", () => {
       );
       expect(existsSync(file)).toBe(true);
       expect(scanText(readFileSync(file, "utf8"))).toEqual([]);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
+  test("the meta-tooling exclusion is NARROW: a planted PRODUCT-surface ref still reddens; only the tooling source is exempt", () => {
+    const tree = mkdtempSync(join(tmpdir(), "perry-remove-mut-"));
+    try {
+      const ref =
+        'import { documentsEntitySchema } from "@perry-starter/db/documents";\n';
+      // A real product-surface consumer (apps/ or packages/) — MUST be caught.
+      const productFile = join(tree, "packages", "feature", "src", "uses.ts");
+      mkdirSync(dirname(productFile), { recursive: true });
+      writeFileSync(productFile, ref);
+      // The removal tool's own pattern source — MUST be exempt.
+      const toolingFile = join(tree, "scripts", "remove-reference.mjs");
+      mkdirSync(dirname(toolingFile), { recursive: true });
+      writeFileSync(toolingFile, ref);
+
+      const hits = findProductDocRefs(tree);
+      expect(hits).toContain("packages/feature/src/uses.ts");
+      expect(hits).not.toContain("scripts/remove-reference.mjs");
     } finally {
       rmSync(tree, { recursive: true, force: true });
     }

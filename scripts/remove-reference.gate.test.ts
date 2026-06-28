@@ -54,6 +54,23 @@ const DOC_REFERENCE_PATTERNS = [
 const SCAN_SKIP_DIRS = new Set(["node_modules", ".git"]);
 const SOURCE_EXT = /\.[mc]?tsx?$/;
 
+// The rename/removal META-TOOLING necessarily contains entity-name pattern
+// literals (it exists to FIND them) — it is template machinery, never an
+// adopter product-surface consumer, so the surviving-refs scan must not flag
+// it. This exclusion is exactly that tooling set and nothing else; the full
+// product surface (apps/ + packages/, incl. tests + fixtures) is still scanned.
+const META_TOOLING = new Set([
+  "scripts/rename.mjs",
+  "scripts/remove-reference.mjs",
+  "scripts/rename-manifest.mjs",
+  "scripts/rename.gate.test.ts",
+  "scripts/rename.mutation.test.ts",
+  "scripts/remove-reference.gate.test.ts",
+  "scripts/remove-reference.mutation.test.ts",
+  "scripts/thin-rename-scope.gate.test.ts",
+  "scripts/thin-rename-scope.mutation.test.ts",
+]);
+
 const readDir = (dir: string) => {
   try {
     return readdirSync(dir, { withFileTypes: true });
@@ -76,10 +93,14 @@ const walkAll = (dir: string): string[] => {
   return out;
 };
 
-// Whole-tree string scan — INCLUDING tests and fixtures.
+// Whole-tree string scan over the PRODUCT surface — INCLUDING tests and
+// fixtures — excluding only the rename/removal meta-tooling.
 const findDocReferences = (treeRoot: string): string[] => {
   const hits: string[] = [];
   for (const file of walkAll(treeRoot)) {
+    if (META_TOOLING.has(file.slice(treeRoot.length + 1))) {
+      continue;
+    }
     const source = readFileSync(file, "utf8");
     for (const pattern of DOC_REFERENCE_PATTERNS) {
       if (pattern.test(source)) {

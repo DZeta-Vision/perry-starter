@@ -28,7 +28,23 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
+
+// The rename/removal META-TOOLING is template machinery (it necessarily names
+// the entity to find/rewrite it) — never a product consumer. It is excluded
+// from the consumer sweep so removing the reference entity never deletes the
+// rename/removal scripts or their gate/twin tests.
+const META_TOOLING = new Set([
+  "scripts/rename.mjs",
+  "scripts/remove-reference.mjs",
+  "scripts/rename-manifest.mjs",
+  "scripts/rename.gate.test.ts",
+  "scripts/rename.mutation.test.ts",
+  "scripts/remove-reference.gate.test.ts",
+  "scripts/remove-reference.mutation.test.ts",
+  "scripts/thin-rename-scope.gate.test.ts",
+  "scripts/thin-rename-scope.mutation.test.ts",
+]);
 
 // Step 1 — re-points. Exact-text edits on the two generic db gates: drop the
 // `documents` import and the `documents` case, keeping the delta-envelope /
@@ -229,6 +245,9 @@ const sweepConsumers = (root) => {
   walk(root, files);
   let swept = 0;
   for (const file of files) {
+    if (META_TOOLING.has(relative(root, file))) {
+      continue;
+    }
     if (isSweepable(file) && referencesEntity(readFileSync(file, "utf8"))) {
       rmSync(file, { force: true });
       swept += 1;
