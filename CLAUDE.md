@@ -64,3 +64,16 @@ Keep CLAUDE.md updated when:
 - Modifying build/dev workflows
 
 AI assistants should suggest updates to this file when they notice relevant changes.
+
+<!-- SKF-CAMPAIGN:perry-starter-impl START -->
+## Implementation skills (campaign: perry-starter-impl)
+
+This repo ships a **campaign-verified skill set** that grounds the pre-1.0 stack at exact pinned commits — training data is weak/wrong on PerryTS, SurrealDB-over-HTTP, AG-UI/TanStack-AI, Loro, Alchemy, etc. **Consult the relevant skill before writing stack code.**
+
+- **Index:** `skills/SKILLS-INDEX.md` (27 skills + capstone, with pins, commits, scores; 22 library skills carry their full public API)
+- **Start here:** `skills/perry-starter-stack/SKILL.md` — the integration map (Shape C-prime daemon-serves-UI-over-loopback, the `PERRY_TARGET` build seam, the cloud Worker gatekeeper, assembly order, and the 5 cross-skill contracts)
+- **Per engine:** `skills/<name>/SKILL.md` — perryts, surrealdb-http, better-auth-org, loro-crdt-deltalog, llama-cpp, agui-tanstack-ai, tanstack-start, alchemy-cf-workers (+ Tier-B supporting skills)
+- **Refined architecture & gaps:** `.../ARCHITECTURE-SPINE-refined.md` (doc-rot fixed; original spine intact) and `forge-data/feasibility-report-perry-starter-latest.md`
+
+Each skill is pinned to a commit; spike-gated capabilities are tagged `[UNVALIDATED -- S#]`. Honor the Perry integration law (no in-process SDK/WASM/prebuilt-JS in the daemon; HTTP + native fetch + supervised sidecars).
+<!-- SKF-CAMPAIGN:perry-starter-impl END -->

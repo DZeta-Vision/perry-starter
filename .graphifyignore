@@ -1,0 +1,36 @@
+# graphify signal-sharpening for perry-starter.
+# Merged on top of .gitignore (graphify honors .gitignore automatically) and
+# graphify's hard-coded defaults (node_modules, .git, dist, .turbo, .idea, lockfiles…).
+# Only the boilerplate that survives those defaults is listed here.
+
+# Generated / compiled
+**/.source/**
+**/*.gen.ts
+source.config.mjs
+
+# Vendored shadcn UI primitives (boilerplate, no app logic)
+**/components/ui/**
+apps/web/src/components/loader.tsx
+
+# Template placeholders / stock boilerplate
+**/content/docs/test.mdx
+apps/fumadocs/README.md
+**/public/robots.txt
+
+# Config / manifest dumps (stack is already captured in CLAUDE.md)
+# Nested copies (graphify's **/ needs a dir component, so it won't hit root files):
+**/package.json
+**/tsconfig*.json
+**/components.json
+**/turbo.json
+**/postcss.config.*
+**/next.config.*
+**/.vscode/**
+lefthook.yml
+# Root-anchored copies of the same (the **/ patterns above skip the repo root):
+/package.json
+/tsconfig.json
+/tsconfig.base.json
+/turbo.json
+/components.json
+/.vscode/
