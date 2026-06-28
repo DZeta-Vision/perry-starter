@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// AD-17 meta-gate — the anti-vacuous enforcer (RUNNABLE NOW, BLOCKING).
+// Meta-gate — the anti-vacuous enforcer (RUNNABLE NOW, BLOCKING).
 //
-// Test-design risk R-008 ("AD-17 gate vacuousness"): a conformance gate that
+// Gate vacuousness: a conformance gate that
 // cannot fail ships a false guarantee to every downstream adopter. The
-// structural defense (test-design Part 4.1) is: every conformance-gate test
+// structural defense is: every conformance-gate test
 // (`*.gate.test.ts`) MUST ship a paired mutation twin (`*.mutation.test.ts`)
 // that feeds known-bad input and asserts the gate goes red. A gate WITHOUT its
 // mutation twin is itself a CI failure.
@@ -13,7 +13,7 @@
 // listing any gate missing its twin.
 //
 // Today there are zero gate files (the `packages/*` they live in do not exist
-// yet — test-design TC-5). The structure is wired and ready: with no gates the
+// yet). The structure is wired and ready: with no gates the
 // invariant "every gate has a twin" is vacuously TRUE, so the gate exits 0
 // cleanly and reports that the structure is ready. Once real gate files land,
 // this becomes a live blocking enforcer with nothing further to wire.
@@ -115,7 +115,7 @@ const main = () => {
       );
     }
     process.stderr.write(
-      "\nEvery conformance gate must ship a mutation twin (R-008) or CI fails.\n"
+      "\nEvery conformance gate must ship a mutation twin or CI fails.\n"
     );
     process.exit(1);
     return;

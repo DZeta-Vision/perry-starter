@@ -49,7 +49,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   );
 }
 
-export async function generateStaticParams() {
+export function generateStaticParams() {
   return source.generateParams();
 }
 

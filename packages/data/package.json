@@ -1,0 +1,30 @@
+{
+  "name": "@perry-starter/data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "perry-local": "./src/documents.local.ts",
+      "perry-cloud": "./src/documents.cloud.ts",
+      "default": "./src/documents.local.ts"
+    },
+    "./documents": "./src/documents.ts",
+    "./documents.local": "./src/documents.local.ts",
+    "./documents.cloud": "./src/documents.cloud.ts",
+    "./surreal-http": "./src/surreal-http.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@perry-starter/db": "workspace:*",
+    "@perry-starter/env": "workspace:*"
+  },
+  "devDependencies": {
+    "@perry-starter/config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

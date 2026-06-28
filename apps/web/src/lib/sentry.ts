@@ -1,4 +1,15 @@
-import * as Sentry from "@sentry/node";
+import {
+  type Breadcrumb,
+  close,
+  init,
+  type SeverityLevel,
+  addBreadcrumb as sentryAddBreadcrumb,
+  captureException as sentryCaptureException,
+  captureMessage as sentryCaptureMessage,
+  setUser as sentrySetUser,
+  startSpan,
+  type User,
+} from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 // Sentry configuration from environment variables
@@ -29,7 +40,7 @@ export function initSentry(): void {
     return;
   }
 
-  Sentry.init({
+  init({
     dsn,
     environment,
     integrations: [
@@ -57,7 +68,7 @@ export function initSentry(): void {
  */
 export async function closeSentry(): Promise<void> {
   try {
-    await Sentry.close(2000);
+    await close(2000);
     console.log("[Sentry] Closed successfully");
   } catch (error) {
     console.error("[Sentry] Error closing:", error);
@@ -75,7 +86,7 @@ export async function closeSentry(): Promise<void> {
  * }
  */
 export function captureException(error: Error | unknown): string {
-  return Sentry.captureException(error);
+  return sentryCaptureException(error);
 }
 
 /**
@@ -86,9 +97,9 @@ export function captureException(error: Error | unknown): string {
  */
 export function captureMessage(
   message: string,
-  level: Sentry.SeverityLevel = "info"
+  level: SeverityLevel = "info"
 ): string {
-  return Sentry.captureMessage(message, level);
+  return sentryCaptureMessage(message, level);
 }
 
 /**
@@ -97,8 +108,8 @@ export function captureMessage(
  * @example
  * setUser({ id: "123", email: "user@example.com" });
  */
-export function setUser(user: Sentry.User | null): void {
-  Sentry.setUser(user);
+export function setUser(user: User | null): void {
+  sentrySetUser(user);
 }
 
 /**
@@ -111,8 +122,8 @@ export function setUser(user: Sentry.User | null): void {
  *   level: "info",
  * });
  */
-export function addBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
-  Sentry.addBreadcrumb(breadcrumb);
+export function addBreadcrumb(breadcrumb: Breadcrumb): void {
+  sentryAddBreadcrumb(breadcrumb);
 }
 
 /**
@@ -126,15 +137,12 @@ export function addBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
  *   }
  * );
  */
-export async function withSpan<T>(
-  context: Parameters<typeof Sentry.startSpan>[0],
+export function withSpan<T>(
+  context: Parameters<typeof startSpan>[0],
   callback: () => Promise<T>
 ): Promise<T> {
-  return Sentry.startSpan(context, callback);
+  return startSpan(context, callback);
 }
-
-// Re-export Sentry for advanced usage
-export { Sentry };
 
 /**
  * Environment Variables:

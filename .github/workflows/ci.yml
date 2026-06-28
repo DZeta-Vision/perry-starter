@@ -1,16 +1,15 @@
-# perry-starter — authoritative CI pipeline (AD-17).
+# perry-starter — authoritative CI pipeline.
 #
 # This is the NON-BYPASSABLE gate. Lefthook (lefthook.yml) runs a subset locally
 # for fast feedback but is bypassable (`git commit --no-verify`); the gates that
-# actually block a merge live here (FR-54).
+# actually block a merge live here.
 #
 # Gate status legend:
 #   BLOCKING-today  — real, runs now, failure blocks the merge.
 #   STRUCTURE       — wired but non-blocking; becomes blocking when its target
-#                     package lands or its [UNVALIDATED — S7] spike closes.
+#                     package lands or its deferred scanner gate is proven out.
 #
-# Provenance: skills/ci-gates/SKILL.md (AD-17 gate set);
-# _bmad-output/.../test-design-system-2026-06-25.md (Part 4.1 gate->level map, R-008 meta-gate).
+# Gates below, in order: quality, unit, a11y + contrast, meta-gate, conformance.
 
 name: CI
 
@@ -47,21 +46,24 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Ultracite/Biome (biome-ultracite owns the depth).
+      # Ultracite/Biome lint + format.
       - name: Lint + format check
         run: bun run check
 
-      # tsc across the monorepo via Turbo (turborepo-bun owns the task carrier).
+      # tsc across the monorepo via Turbo.
       - name: Type check
         run: bun run check-types
 
-      # Secret scan (BLOCKING). gitleaks-action exits non-zero on any finding.
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Secret scan (BLOCKING) — pinned gitleaks CLI. The gitleaks GitHub Action
+      # requires a paid license inside an organization; the CLI is free and needs
+      # none. Exits non-zero on any finding.
+      - name: Gitleaks (secret scan)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --no-banner
 
-      # TODO: commitlint (conventional commits, FR-54). Add once
+      # TODO: commitlint (conventional commits). Add once
       # commitlint.config.* lands; run `bunx commitlint` over the PR commit
       # range. Left out here rather than wired against a non-existent config.
       # - name: Commitlint
@@ -81,12 +83,21 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # SurrealDB v3.1.5 — the local-store integration tests spawn an in-memory
+      # `surreal` sidecar over HTTP, so the pinned binary must be on PATH.
+      - name: Install SurrealDB (v3.1.5)
+        run: |
+          curl -sSf https://install.surrealdb.com | sh -s -- --version v3.1.5
+          echo "$HOME/.surrealdb" >> "$GITHUB_PATH"
+      - name: Verify SurrealDB
+        run: surreal version
+
       - name: Vitest run
         run: bun run test
       # TODO: enforce --coverage.thresholds when packages/* tests land.
       # Coverage is collected (v8, root vitest.config.ts) but NOT gated today —
-      # 0% with no tests would fail a threshold gate vacuously (test-design:
-      # "set at CI step, do not guess").
+      # 0% with no tests would fail a threshold gate vacuously; set the
+      # threshold at this CI step once tests exist, do not guess a number.
 
   # ---------------------------------------------------------------------------
   # a11y-and-contrast (BLOCKING for contrast; a11y e2e is STRUCTURE today).
@@ -107,7 +118,7 @@ jobs:
       - name: WCAG-AA contrast gate
         run: node scripts/contrast-gate.mjs
 
-      # STRUCTURE: full-route a11y gate (axe fixture, AD-33). Routes/auth are not
+      # STRUCTURE: full-route a11y gate (axe fixture). Routes/auth are not
       # headlessly testable until apps/daemon boots in CI, so this is allowed to
       # fail without blocking. The contrast gate above stays BLOCKING.
       # TODO: drop continue-on-error and make this blocking once the app boots
@@ -120,7 +131,7 @@ jobs:
         continue-on-error: true
 
   # ---------------------------------------------------------------------------
-  # meta-gate (BLOCKING) — R-008 anti-vacuous enforcer.
+  # meta-gate (BLOCKING) — anti-vacuous (mutation-twin) enforcer.
   # ---------------------------------------------------------------------------
   meta-gate:
     name: meta-gate (mutation-twin enforcer)
@@ -145,37 +156,36 @@ jobs:
   #
   # The `node` Vitest project glob is ready but matches nothing until the
   # packages below exist. This job MUST NOT fail CI today. Each TODO names the
-  # AD-17 conformance gate to author and the owning package; the [UNVALIDATED —
-  # S7] scanner gates are tracked separately and also must not block yet.
+  # conformance gate to author and the owning package; the deferred scanner
+  # gates are tracked separately and also must not block yet.
   #
-  # AD-17 conformance gates to author per package (test bodies owned by
-  # vitest-playwright; ci-gates wires them):
+  # Conformance gates to author per package:
   #   - delta-envelope / shared-data-shape / single-ownership  -> packages/db
   #       (cursor is server-assigned int, never client ULID/clock; one writer
-  #        owns every projection column incl. the embedding — AD-6/22)
+  #        owns every projection column incl. the embedding)
   #   - cross-layer RBAC role-parity                            -> packages/auth
-  #       (tRPC .use() matrix == SurrealDB PERMISSIONS, single-sourced — AD-9)
+  #       (tRPC .use() matrix == SurrealDB PERMISSIONS, single-sourced)
   #   - cursor / SyncStatus truth-table                         -> packages/sync
-  #       (3-state integer-cursor predicate; UI must not re-derive — AD-22)
+  #       (3-state integer-cursor predicate; UI must not re-derive)
   #   - AG-UI event-subset / locale-parity / splice            -> packages/ai
   #       (frames parse against @ag-ui/core@0.0.52; toolCallName not toolName;
-  #        monotonic concatenation under one messageId — AD-10/NFR-14)
+  #        monotonic concatenation under one messageId)
   #   - response-invariance / anti-enum                         -> packages/auth
-  #       (20-cell cross-surface byte+timing identity — AD-28)
+  #       (20-cell cross-surface byte+timing identity)
   #
-  # [UNVALIDATED — S7] scanner/build-gate family (TODO, will become BLOCKING):
-  #   - manifest-diff gate        (perry --print-api-manifest vs baseline — FR-55)
+  # Deferred scanner/build-gate family (TODO, will become BLOCKING):
+  #   - manifest-diff gate        (perry --print-api-manifest vs baseline)
   #   - tier-boundary build guard (daemon closure denylist incl. transitive
-  #       @electric-sql/pglite + WASM + non-literal dynamic import — AD-3/24)
-  #   - AD-20 read-path AST guard (no full-list client render/sort; no OFFSET)
-  #   - FR-13 mis-tier structural guard (no concrete *.cloud.ts/*.local.ts import
-  #       into app/UI/auth; admin never reads via an auth-only tier — AD-24)
-  #   - EXPLAIN index-coverage plan-shape + p99 perf budget (FR-56/NFR-10;
-  #       EXPLAIN operator vocabulary NOT grounded at pin — derive from upstream)
+  #       @electric-sql/pglite + WASM + non-literal dynamic import)
+  #   - read-path AST guard       (no full-list client render/sort; no OFFSET)
+  #   - mis-tier structural guard (no concrete *.cloud.ts/*.local.ts import
+  #       into app/UI/auth; admin never reads via an auth-only tier)
+  #   - EXPLAIN index-coverage plan-shape + p99 perf budget
+  #       (EXPLAIN operator vocabulary NOT grounded at pin — derive from upstream)
   #   - per-dependency compile-AND-run matrix (perry compile + runtime assert;
-  #       perry check is a non-blocking pre-filter only — AD-4; Linux x64 only)
+  #       perry check is a non-blocking pre-filter only; Linux x64 only)
   conformance-gates:
-    name: conformance-gates (structure-ready)
+    name: conformance-gates (blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -185,9 +195,26 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Runs the `node` Vitest project (packages/*) once gate tests exist. Today
-      # it matches nothing; `--passWithNoTests` keeps the job green (structure
-      # ready, not a vacuous pass — the meta-gate enforces twins separately).
-      # When packages land, drop --passWithNoTests and gate on the suite above.
+      # SurrealDB v3.1.5 — the node project includes the local-store integration
+      # tests, which spawn an in-memory `surreal` sidecar over HTTP.
+      - name: Install SurrealDB (v3.1.5)
+        run: |
+          curl -sSf https://install.surrealdb.com | sh -s -- --version v3.1.5
+          echo "$HOME/.surrealdb" >> "$GITHUB_PATH"
+      - name: Verify SurrealDB
+        run: surreal version
+
+      # Runs the `node` Vitest project (packages/*). packages/db has landed its
+      # conformance gate + mutation-twin suite, so this job now BLOCKS on the
+      # suite (no --passWithNoTests). The meta-gate enforces twins separately.
       - name: Conformance suite (node project)
-        run: bunx vitest run --project node --passWithNoTests
+        run: bunx vitest run --project node
+
+      # STRUCTURE (non-blocking): tier-boundary guard self-check over the repo
+      # graph — flags a concrete-impl import into the UI and a denylisted
+      # cloud/WASM dependency reaching the daemon/seam graph. Blocking
+      # enforcement, the full resolved-dependency-closure scan, and the
+      # compile-and-run leg are deferred to later hardening; do not gate on it.
+      - name: Tier-boundary guard (structure)
+        run: node scripts/tier-boundary-guard.mjs --root .
+        continue-on-error: true

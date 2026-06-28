@@ -1,9 +1,29 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalEnv": ["PERRY_TARGET", "VITE_PERRY_TARGET"],
+  "globalPassThroughEnv": ["SURREAL_PASS", "BETTER_AUTH_SECRET"],
+  "boundaries": {
+    "tags": {
+      "contracts": {
+        "dependencies": {
+          "deny": ["seam", "infra"]
+        }
+      }
+    }
+  },
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": [
+        "NODE_ENV",
+        "SURREAL_URL",
+        "SURREAL_NS",
+        "SURREAL_DB",
+        "SURREAL_USER",
+        "BETTER_AUTH_URL",
+        "CORS_ORIGIN"
+      ],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**"]
     },

@@ -1,0 +1,25 @@
+{
+  "name": "@perry-starter/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/document-record.ts",
+    "./shapes/delta-envelope": "./src/shapes/delta-envelope.ts",
+    "./shapes/document-projection": "./src/shapes/document-projection.ts",
+    "./shapes/audit-entry": "./src/shapes/audit-entry.ts",
+    "./collaboration-mode": "./src/collaboration-mode.ts",
+    "./documents": "./src/documents.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@perry-starter/config": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
