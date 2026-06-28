@@ -242,7 +242,7 @@ test.skip("surrealkv on-disk durability survives a restart — operator drill, n
   // in-memory backend only. This is an operator restart-and-reread drill, never
   // wired into CI. When run, if surrealkv does not persist, the reread after
   // the restart returns nothing.
-  const dataDir = join(process.cwd(), ".surreal-durability-drill-1-3");
+  const dataDir = join(process.cwd(), ".surreal-durability-drill");
   const httpMod = await dyn("@perry-starter/data/surreal-http");
   const sql = httpMod.sql as (
     url: string,
