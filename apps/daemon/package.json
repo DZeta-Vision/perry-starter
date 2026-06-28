@@ -1,0 +1,27 @@
+{
+  "name": "@perry-starter/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "perry": {
+    "strict": true,
+    "allowedHosts": [
+      "127.0.0.1:*"
+    ]
+  },
+  "dependencies": {
+    "@perry-starter/data": "workspace:*",
+    "@perry-starter/db": "workspace:*",
+    "@perry-starter/env": "workspace:*",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@perry-starter/config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

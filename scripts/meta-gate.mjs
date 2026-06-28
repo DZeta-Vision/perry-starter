@@ -8,9 +8,9 @@
 // that feeds known-bad input and asserts the gate goes red. A gate WITHOUT its
 // mutation twin is itself a CI failure.
 //
-// This script scans `packages/**` and `apps/web/**` for `*.gate.test.ts`; for
-// each, it asserts a sibling `*.mutation.test.ts` exists. It exits non-zero
-// listing any gate missing its twin.
+// This script scans `packages/**`, `apps/web/**`, and `apps/daemon/**` for
+// `*.gate.test.ts`; for each, it asserts a sibling `*.mutation.test.ts` exists.
+// It exits non-zero listing any gate missing its twin.
 //
 // Today there are zero gate files (the `packages/*` they live in do not exist
 // yet). The structure is wired and ready: with no gates the
@@ -28,7 +28,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 
 // Roots to scan for conformance-gate test files.
-const SCAN_ROOTS = ["packages", join("apps", "web")];
+const SCAN_ROOTS = ["packages", join("apps", "web"), join("apps", "daemon")];
 
 // Directories never worth descending into.
 const SKIP_DIRS = new Set([

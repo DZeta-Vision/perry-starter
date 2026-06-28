@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
+import LanguageToggle from "./language-toggle";
+import ThemeToggle from "./theme-toggle";
 import UserMenu from "./user-menu";
 
 export default function Header() {
@@ -19,6 +21,8 @@ export default function Header() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <LanguageToggle />
           <UserMenu />
         </div>
       </div>
