@@ -191,3 +191,12 @@ jobs:
       # When packages land, drop --passWithNoTests and gate on the suite above.
       - name: Conformance suite (node project)
         run: bunx vitest run --project node --passWithNoTests
+
+      # STRUCTURE (non-blocking): tier-boundary guard self-check over the repo
+      # graph — flags a concrete-impl import into the UI and a denylisted
+      # cloud/WASM dependency reaching the daemon/seam graph. Blocking
+      # enforcement, the full resolved-dependency-closure scan, and the
+      # compile-and-run leg are deferred to later hardening; do not gate on it.
+      - name: Tier-boundary guard (structure)
+        run: node scripts/tier-boundary-guard.mjs --root .
+        continue-on-error: true

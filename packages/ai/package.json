@@ -1,0 +1,23 @@
+{
+  "name": "@perry-starter/ai",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "perry-local": "./src/assistant.local.ts",
+      "perry-cloud": "./src/assistant.cloud.ts",
+      "default": "./src/assistant.local.ts"
+    },
+    "./assistant": "./src/assistant.ts",
+    "./assistant.local": "./src/assistant.local.ts",
+    "./assistant.cloud": "./src/assistant.cloud.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@perry-starter/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

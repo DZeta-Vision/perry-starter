@@ -13,7 +13,9 @@
         "@axe-core/playwright": "catalog:",
         "@biomejs/biome": "2.5.0",
         "@cloudflare/workers-types": "^4.20260621.1",
+        "@perry-starter/ai": "workspace:*",
         "@perry-starter/config": "workspace:*",
+        "@perry-starter/data": "workspace:*",
         "@playwright/test": "catalog:",
         "@types/node": "catalog:",
         "@vitejs/plugin-react": "^6.0.2",
@@ -129,6 +131,14 @@
         "wrangler": "^4.103.0",
       },
     },
+    "packages/ai": {
+      "name": "@perry-starter/ai",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@perry-starter/config": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
     "packages/api": {
       "name": "@perry-starter/api",
       "dependencies": {
@@ -167,6 +177,14 @@
       "name": "@perry-starter/config",
       "version": "0.0.0",
     },
+    "packages/data": {
+      "name": "@perry-starter/data",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@perry-starter/config": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
     "packages/env": {
       "name": "@perry-starter/env",
       "version": "0.0.0",
@@ -177,7 +195,6 @@
       },
       "devDependencies": {
         "@perry-starter/config": "workspace:*",
-        "@perry-starter/infra": "workspace:*",
         "@types/node": "catalog:",
         "typescript": "catalog:",
       },
@@ -662,11 +679,15 @@
 
     "@oxc-project/types": ["@oxc-project/types@0.133.0", "", {}, "sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA=="],
 
+    "@perry-starter/ai": ["@perry-starter/ai@workspace:packages/ai"],
+
     "@perry-starter/api": ["@perry-starter/api@workspace:packages/api"],
 
     "@perry-starter/auth": ["@perry-starter/auth@workspace:packages/auth"],
 
     "@perry-starter/config": ["@perry-starter/config@workspace:packages/config"],
+
+    "@perry-starter/data": ["@perry-starter/data@workspace:packages/data"],
 
     "@perry-starter/env": ["@perry-starter/env@workspace:packages/env"],
 

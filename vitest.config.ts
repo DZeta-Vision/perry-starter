@@ -32,6 +32,21 @@ export default defineConfig({
           name: "node",
           environment: "node",
           include: ["packages/**/*.test.ts"],
+          // Deterministic, in-repo defaults so the server env singleton (which
+          // validates process.env eagerly at import) loads cleanly in tests and
+          // CI without a local .env. Tests that exercise validation pass their
+          // own explicit payloads, so these defaults never mask a failure.
+          env: {
+            PERRY_TARGET: "local-sidecar",
+            SURREAL_URL: "http://127.0.0.1:8000",
+            SURREAL_NS: "perry",
+            SURREAL_DB: "perry",
+            SURREAL_USER: "root",
+            SURREAL_PASS: "root",
+            BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
+            BETTER_AUTH_URL: "http://127.0.0.1:3000",
+            CORS_ORIGIN: "http://127.0.0.1:3000",
+          },
         },
       },
     ],
