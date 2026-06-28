@@ -87,6 +87,22 @@ const mintSecret = (): string => {
   );
 };
 
+// The per-request DB query identity is a scoped, non-root record-access Bearer
+// session bound by the tables' row-level permissions. The root credential above
+// is confined to the bootstrap/DDL path — it bypasses row permissions and is
+// NEVER used to authenticate an application query. This helper is the auth shape
+// the query path presents; the session token comes from the record-access
+// sign-in, not from any root credential.
+export interface QueryAuth {
+  readonly kind: "bearer";
+  readonly token: string;
+}
+
+export const queryAuth = (token: string): QueryAuth => ({
+  kind: "bearer",
+  token,
+});
+
 export const startSupervisor = async (
   config: SupervisorConfig
 ): Promise<SupervisorHandle> => {
@@ -109,9 +125,17 @@ export const startSupervisor = async (
         user,
         "--pass",
         pass,
+        // `--deny-net` is VARIADIC (`--deny-net [<TARGET>...]`): it greedily
+        // consumes the tokens that follow it as deny-targets until the next
+        // flag. It must therefore be followed by a value-less flag, never by the
+        // datastore positional — otherwise it swallows the backend token,
+        // outbound net is left at its default instead of blanket-denied, and the
+        // datastore silently falls back to in-memory. Ordering it before the
+        // value-less deny flags makes it a true blanket net denial and keeps the
+        // backend as the trailing positional.
+        "--deny-net",
         "--deny-guests",
         "--deny-scripting",
-        "--deny-net",
         config.backend,
       ],
       { stdio: "ignore" }

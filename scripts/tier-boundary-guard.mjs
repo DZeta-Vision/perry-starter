@@ -32,8 +32,10 @@ const DAEMON_DENYLIST = [
   "@ag-ui/core",
 ];
 
-// Directories never worth descending into. `__fixtures__` and `test` hold the
-// guard's own intentionally-bad self-test inputs and must not trip the repo scan.
+// Directories never worth descending into. `__fixtures__`, `test`, and
+// `conformance` hold the guard's own intentionally-bad self-test inputs (planted
+// denylisted specifiers, example-bad imports in conformance gates) and must not
+// trip the repo scan.
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -45,6 +47,7 @@ const SKIP_DIRS = new Set([
   ".cache",
   "__fixtures__",
   "test",
+  "conformance",
 ]);
 
 const SOURCE_EXT = /\.[mc]?tsx?$/;
