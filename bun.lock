@@ -185,6 +185,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/db": {
+      "name": "@perry-starter/db",
+      "version": "0.0.0",
+      "dependencies": {
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@perry-starter/config": "workspace:*",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/env": {
       "name": "@perry-starter/env",
       "version": "0.0.0",
@@ -688,6 +700,8 @@
     "@perry-starter/config": ["@perry-starter/config@workspace:packages/config"],
 
     "@perry-starter/data": ["@perry-starter/data@workspace:packages/data"],
+
+    "@perry-starter/db": ["@perry-starter/db@workspace:packages/db"],
 
     "@perry-starter/env": ["@perry-starter/env@workspace:packages/env"],
 

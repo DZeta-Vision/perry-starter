@@ -175,7 +175,7 @@ jobs:
   #   - per-dependency compile-AND-run matrix (perry compile + runtime assert;
   #       perry check is a non-blocking pre-filter only — AD-4; Linux x64 only)
   conformance-gates:
-    name: conformance-gates (structure-ready)
+    name: conformance-gates (blocking)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -185,12 +185,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Runs the `node` Vitest project (packages/*) once gate tests exist. Today
-      # it matches nothing; `--passWithNoTests` keeps the job green (structure
-      # ready, not a vacuous pass — the meta-gate enforces twins separately).
-      # When packages land, drop --passWithNoTests and gate on the suite above.
+      # Runs the `node` Vitest project (packages/*). packages/db has landed its
+      # conformance gate + mutation-twin suite, so this job now BLOCKS on the
+      # suite (no --passWithNoTests). The meta-gate enforces twins separately.
       - name: Conformance suite (node project)
-        run: bunx vitest run --project node --passWithNoTests
+        run: bunx vitest run --project node
 
       # STRUCTURE (non-blocking): tier-boundary guard self-check over the repo
       # graph — flags a concrete-impl import into the UI and a denylisted
