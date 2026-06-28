@@ -6,6 +6,7 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 
+import "@fontsource-variable/inter/index.css";
 import "./index.css";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
