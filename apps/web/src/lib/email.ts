@@ -4,13 +4,13 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export interface SendEmailOptions {
-  to: string | string[];
-  subject: string;
-  html?: string;
-  text?: string;
-  react?: React.ReactElement;
   from?: string;
+  html?: string;
+  react?: React.ReactElement;
   replyTo?: string;
+  subject: string;
+  text?: string;
+  to: string | string[];
 }
 
 /**
@@ -20,7 +20,8 @@ export interface SendEmailOptions {
 export async function sendEmail(options: SendEmailOptions) {
   const { to, subject, html, text, react, from, replyTo } = options;
 
-  const fromAddress = from || process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const fromAddress =
+    from || process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 
   try {
     const { data, error } = await resend.emails.send({

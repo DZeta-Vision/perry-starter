@@ -12,8 +12,8 @@ import {
 } from "@react-email/components";
 
 interface WelcomeEmailProps {
-  username?: string;
   loginUrl?: string;
+  username?: string;
 }
 
 export function WelcomeEmail({
@@ -28,9 +28,11 @@ export function WelcomeEmail({
         <Container style={container}>
           <Heading style={h1}>Welcome to perry-starter!</Heading>
           <Text style={text}>Hi {username},</Text>
-          <Text style={text}>Thanks for signing up! We're excited to have you on board.</Text>
+          <Text style={text}>
+            Thanks for signing up! We're excited to have you on board.
+          </Text>
           <Section style={buttonContainer}>
-            <Button style={button} href={loginUrl}>
+            <Button href={loginUrl} style={button}>
               Get Started
             </Button>
           </Section>

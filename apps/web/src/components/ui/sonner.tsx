@@ -1,14 +1,13 @@
-import type { ToasterProps } from "sonner";
-
 import {
+  Alert02Icon,
+  AlertCircleIcon,
   CheckmarkCircle02Icon,
   InformationCircleIcon,
   Loading03Icon,
-  AlertCircleIcon,
-  Alert02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type HugeiconsIconProps } from "@hugeicons/react";
 import { useTheme } from "next-themes";
+import type { ToasterProps } from "sonner";
 import { Toaster as Sonner } from "sonner";
 
 const CircleCheckIcon = (props: Omit<HugeiconsIconProps, "icon">) => (
@@ -32,7 +31,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -49,6 +47,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      theme={theme as ToasterProps["theme"]}
       toastOptions={{
         classNames: {
           toast: "cn-toast",

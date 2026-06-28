@@ -27,7 +27,7 @@
     "backend.email": "typescript:resend",
     "backend.observability": "typescript:sentry",
     "backend.ai": "typescript:tanstack-ai",
-    "backend.validation": "typescript:zod",
+    "backend.validation": "typescript:zod"
   },
   "ecosystem": "typescript",
   "database": "none",
@@ -45,7 +45,7 @@
     "tanstack-pacer",
     "tanstack-table",
     "tanstack-virtual",
-    "turborepo",
+    "turborepo"
   ],
   "examples": [],
   "auth": "better-auth-organizations",
@@ -169,7 +169,7 @@
       "toolId": "tanstack-start",
       "ecosystem": "typescript",
       "source": "legacy",
-      "targetPath": "apps/web",
+      "targetPath": "apps/web"
     },
     {
       "id": "backend:typescript:self",
@@ -177,42 +177,42 @@
       "toolId": "self",
       "ecosystem": "typescript",
       "source": "legacy",
-      "targetPath": "apps/server",
+      "targetPath": "apps/server"
     },
     {
       "id": "codequality:universal:lefthook",
       "role": "codeQuality",
       "toolId": "lefthook",
       "ecosystem": "universal",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "codequality:universal:ultracite",
       "role": "codeQuality",
       "toolId": "ultracite",
       "ecosystem": "universal",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "documentation:universal:fumadocs",
       "role": "documentation",
       "toolId": "fumadocs",
       "ecosystem": "universal",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "workspacetooling:universal:mcp",
       "role": "workspaceTooling",
       "toolId": "mcp",
       "ecosystem": "universal",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "workspacetooling:universal:skills",
       "role": "workspaceTooling",
       "toolId": "skills",
       "ecosystem": "universal",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.datafetching:typescript:tanstack-db",
@@ -220,7 +220,7 @@
       "toolId": "tanstack-db",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.datafetching:typescript:tanstack-pacer",
@@ -228,7 +228,7 @@
       "toolId": "tanstack-pacer",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.datafetching:typescript:tanstack-table",
@@ -236,7 +236,7 @@
       "toolId": "tanstack-table",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.datafetching:typescript:tanstack-virtual",
@@ -244,14 +244,14 @@
       "toolId": "tanstack-virtual",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "workspacetooling:universal:turborepo",
       "role": "workspaceTooling",
       "toolId": "turborepo",
       "ecosystem": "universal",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.api:typescript:trpc",
@@ -259,7 +259,7 @@
       "toolId": "trpc",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.auth:typescript:better-auth-organizations",
@@ -267,7 +267,7 @@
       "toolId": "better-auth-organizations",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.deploy:typescript:cloudflare",
@@ -275,7 +275,7 @@
       "toolId": "cloudflare",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.css:typescript:tailwind",
@@ -283,7 +283,7 @@
       "toolId": "tailwind",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.ui:typescript:shadcn-ui",
@@ -291,7 +291,7 @@
       "toolId": "shadcn-ui",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.forms:typescript:tanstack-form",
@@ -299,7 +299,7 @@
       "toolId": "tanstack-form",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.statemanagement:typescript:zustand",
@@ -307,7 +307,7 @@
       "toolId": "zustand",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "frontend:typescript:tanstack-start.animation:typescript:framer-motion",
@@ -315,7 +315,7 @@
       "toolId": "framer-motion",
       "ecosystem": "typescript",
       "ownerPartId": "frontend:typescript:tanstack-start",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.logging:typescript:pino",
@@ -323,7 +323,7 @@
       "toolId": "pino",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.email:typescript:resend",
@@ -331,7 +331,7 @@
       "toolId": "resend",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.observability:typescript:sentry",
@@ -339,7 +339,7 @@
       "toolId": "sentry",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.ai:typescript:tanstack-ai",
@@ -347,7 +347,7 @@
       "toolId": "tanstack-ai",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
+      "source": "legacy"
     },
     {
       "id": "backend:typescript:self.validation:typescript:zod",
@@ -355,7 +355,7 @@
       "toolId": "zod",
       "ecosystem": "typescript",
       "ownerPartId": "backend:typescript:self",
-      "source": "legacy",
-    },
-  ],
+      "source": "legacy"
+    }
+  ]
 }

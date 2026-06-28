@@ -4,8 +4,12 @@ import { nodeProfilingIntegration } from "@sentry/profiling-node";
 // Sentry configuration from environment variables
 const dsn = process.env.SENTRY_DSN;
 const environment = process.env.SENTRY_ENVIRONMENT || "development";
-const tracesSampleRate = parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || "1.0");
-const profilesSampleRate = parseFloat(process.env.SENTRY_PROFILES_SAMPLE_RATE || "0.1");
+const tracesSampleRate = Number.parseFloat(
+  process.env.SENTRY_TRACES_SAMPLE_RATE || "1.0"
+);
+const profilesSampleRate = Number.parseFloat(
+  process.env.SENTRY_PROFILES_SAMPLE_RATE || "0.1"
+);
 
 /**
  * Initialize Sentry for error tracking and performance monitoring
@@ -80,7 +84,10 @@ export function captureException(error: Error | unknown): string {
  * @example
  * captureMessage("User completed checkout", "info");
  */
-export function captureMessage(message: string, level: Sentry.SeverityLevel = "info"): string {
+export function captureMessage(
+  message: string,
+  level: Sentry.SeverityLevel = "info"
+): string {
   return Sentry.captureMessage(message, level);
 }
 
@@ -121,7 +128,7 @@ export function addBreadcrumb(breadcrumb: Sentry.Breadcrumb): void {
  */
 export async function withSpan<T>(
   context: Parameters<typeof Sentry.startSpan>[0],
-  callback: () => Promise<T>,
+  callback: () => Promise<T>
 ): Promise<T> {
   return Sentry.startSpan(context, callback);
 }

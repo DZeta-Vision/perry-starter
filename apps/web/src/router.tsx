@@ -1,6 +1,10 @@
 import type { AppRouter } from "@perry-starter/api/routers/index";
 
-import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 
 import "./index.css";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
@@ -42,7 +46,7 @@ const trpcClient = createTRPCClient<AppRouter>({
 
 const trpc = createTRPCOptionsProxy({
   client: trpcClient,
-  queryClient: queryClient,
+  queryClient,
 });
 
 export const getRouter = () => {
@@ -55,7 +59,7 @@ export const getRouter = () => {
     defaultNotFoundComponent: () => <div>Not Found</div>,
     Wrap: ({ children }) => (
       <QueryClientProvider client={queryClient}>
-        <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+        <TRPCProvider queryClient={queryClient} trpcClient={trpcClient}>
           {children}
         </TRPCProvider>
       </QueryClientProvider>
