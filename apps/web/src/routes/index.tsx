@@ -27,6 +27,13 @@ function HomeComponent() {
   const trpc = useTRPC();
   const healthCheck = useQuery(trpc.healthCheck.queryOptions());
 
+  let apiStatusText = "Disconnected";
+  if (healthCheck.isLoading) {
+    apiStatusText = "Checking...";
+  } else if (healthCheck.data) {
+    apiStatusText = "Connected";
+  }
+
   return (
     <div className="container mx-auto max-w-3xl px-4 py-2">
       <pre className="overflow-x-auto font-mono text-sm">{TITLE_TEXT}</pre>
@@ -38,11 +45,7 @@ function HomeComponent() {
               className={`h-2 w-2 rounded-full ${healthCheck.data ? "bg-green-500" : "bg-red-500"}`}
             />
             <span className="text-muted-foreground text-sm">
-              {healthCheck.isLoading
-                ? "Checking..."
-                : healthCheck.data
-                  ? "Connected"
-                  : "Disconnected"}
+              {apiStatusText}
             </span>
           </div>
         </section>

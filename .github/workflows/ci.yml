@@ -80,6 +80,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # SurrealDB v3.1.5 — the local-store integration tests spawn an in-memory
+      # `surreal` sidecar over HTTP, so the pinned binary must be on PATH.
+      - name: Install SurrealDB (v3.1.5)
+        run: |
+          curl -sSf https://install.surrealdb.com | sh -s -- --version v3.1.5
+          echo "$HOME/.surrealdb" >> "$GITHUB_PATH"
+      - name: Verify SurrealDB
+        run: surreal version
+
       - name: Vitest run
         run: bun run test
       # TODO: enforce --coverage.thresholds when packages/* tests land.
@@ -182,6 +191,15 @@ jobs:
           bun-version: 1.3.13
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # SurrealDB v3.1.5 — the node project includes the local-store integration
+      # tests, which spawn an in-memory `surreal` sidecar over HTTP.
+      - name: Install SurrealDB (v3.1.5)
+        run: |
+          curl -sSf https://install.surrealdb.com | sh -s -- --version v3.1.5
+          echo "$HOME/.surrealdb" >> "$GITHUB_PATH"
+      - name: Verify SurrealDB
+        run: surreal version
 
       # Runs the `node` Vitest project (packages/*). packages/db has landed its
       # conformance gate + mutation-twin suite, so this job now BLOCKS on the
