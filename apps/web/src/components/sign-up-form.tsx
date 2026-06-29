@@ -1,166 +1,71 @@
-import { useForm } from "@tanstack/react-form";
-import { useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
-import z from "zod";
-
-import { authClient } from "@/lib/auth-client";
-
-import Loader from "./loader";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Label } from "./ui/label";
 
+// Placeholder sign-up form for the app-shell. It presents the fields and copy
+// with no behavior wired yet — the authentication flow (validation, submit,
+// session) is layered on in a later epic. Rendered standalone so it needs no
+// router or auth context. Mirrors sign-in-form's placeholder treatment.
 export default function SignUpForm({
   onSwitchToSignIn,
 }: {
-  onSwitchToSignIn: () => void;
+  onSwitchToSignIn?: () => void;
 }) {
-  const navigate = useNavigate({
-    from: "/",
-  });
-  const { isPending } = authClient.useSession();
-
-  const form = useForm({
-    defaultValues: {
-      email: "",
-      password: "",
-      name: "",
-    },
-    onSubmit: async ({ value }) => {
-      await authClient.signUp.email(
-        {
-          email: value.email,
-          password: value.password,
-          name: value.name,
-        },
-        {
-          onSuccess: () => {
-            navigate({
-              to: "/dashboard",
-            });
-            toast.success("Sign up successful");
-          },
-          onError: (error) => {
-            toast.error(error.error.message || error.error.statusText);
-          },
-        }
-      );
-    },
-    validators: {
-      onSubmit: z.object({
-        name: z.string().min(2, "Name must be at least 2 characters"),
-        email: z.email("Invalid email address"),
-        password: z.string().min(8, "Password must be at least 8 characters"),
-      }),
-    },
-  });
-
-  if (isPending) {
-    return <Loader />;
-  }
-
   return (
     <div className="mx-auto mt-10 w-full max-w-md p-6">
       <h1 className="mb-6 text-center font-bold text-3xl">Create Account</h1>
 
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          form.handleSubmit();
-        }}
-      >
-        <div>
-          <form.Field name="name">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Name</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  value={field.state.value}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p className="text-red-500" key={error?.message}>
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
+      <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+        <div className="space-y-2">
+          <label className="text-xs" htmlFor="signup-name">
+            Name
+          </label>
+          <Input
+            autoComplete="name"
+            id="signup-name"
+            name="name"
+            placeholder="Your name"
+            type="text"
+          />
         </div>
 
-        <div>
-          <form.Field name="email">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Email</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  type="email"
-                  value={field.state.value}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p className="text-red-500" key={error?.message}>
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
+        <div className="space-y-2">
+          <label className="text-xs" htmlFor="signup-email">
+            Email
+          </label>
+          <Input
+            autoComplete="email"
+            id="signup-email"
+            name="email"
+            placeholder="you@example.com"
+            type="email"
+          />
         </div>
 
-        <div>
-          <form.Field name="password">
-            {(field) => (
-              <div className="space-y-2">
-                <Label htmlFor={field.name}>Password</Label>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  type="password"
-                  value={field.state.value}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p className="text-red-500" key={error?.message}>
-                    {error?.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
+        <div className="space-y-2">
+          <label className="text-xs" htmlFor="signup-password">
+            Password
+          </label>
+          <Input
+            autoComplete="new-password"
+            id="signup-password"
+            name="password"
+            placeholder="Create a password"
+            type="password"
+          />
         </div>
 
-        <form.Subscribe>
-          {(state) => (
-            <Button
-              className="w-full"
-              disabled={!state.canSubmit || state.isSubmitting}
-              type="submit"
-            >
-              {state.isSubmitting ? "Submitting..." : "Sign Up"}
-            </Button>
-          )}
-        </form.Subscribe>
+        <Button className="w-full" disabled type="submit">
+          Sign Up
+        </Button>
       </form>
 
-      <div className="mt-4 text-center">
-        <Button
-          className="text-indigo-600 hover:text-indigo-800"
-          onClick={onSwitchToSignIn}
-          variant="link"
-        >
-          Already have an account? Sign In
-        </Button>
-      </div>
+      {onSwitchToSignIn ? (
+        <div className="mt-4 text-center">
+          <Button onClick={onSwitchToSignIn} type="button" variant="link">
+            Already have an account? Sign In
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
