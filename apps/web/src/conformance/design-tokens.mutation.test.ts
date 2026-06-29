@@ -130,4 +130,17 @@ describe("the design-token gate reddens on bad input (clean control stays green)
       declaresCompetingToken(":root { --primary: oklch(0.7 0.2 30); }")
     ).toBe(true);
   });
+
+  test("a competing --primary declared inside a .tsx template literal trips the same single-source predicate", () => {
+    // Clean control: a component that only CONSUMES the token via var().
+    expect(declaresCompetingToken('const cls = "text-[var(--primary)]";')).toBe(
+      false
+    );
+    // Mutation: a component that DECLARES a competing --primary in CSS-in-JS.
+    expect(
+      declaresCompetingToken(
+        "const styles = `:root { --primary: oklch(0.7 0.2 30); }`;"
+      )
+    ).toBe(true);
+  });
 });

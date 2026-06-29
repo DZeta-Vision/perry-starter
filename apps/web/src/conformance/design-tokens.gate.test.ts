@@ -115,7 +115,14 @@ const COMPETING_DECL_RE = /(--primary|--background)\s*:/;
 const ROOT_BLOCK_RE = /:root\s*\{/;
 const DARK_BLOCK_RE = /(^|[^\w-])\.dark\s*\{/;
 
-const collectCss = (dir: string, out: string[]): void => {
+// Style-bearing sources where a competing token could hide: stylesheets AND
+// .ts/.tsx (a --primary/--background declaration in CSS-in-JS or a template
+// literal would otherwise escape a .css-only scan). Test files are excluded —
+// their fixtures legitimately carry token strings.
+const STYLE_EXTENSIONS = [".css", ".ts", ".tsx"] as const;
+const isTestFile = (name: string): boolean => name.includes(".test.");
+
+const collectStyleSources = (dir: string, out: string[]): void => {
   let entries: import("node:fs").Dirent[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -126,29 +133,34 @@ const collectCss = (dir: string, out: string[]): void => {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name !== "node_modules") {
-        collectCss(full, out);
+        collectStyleSources(full, out);
       }
-    } else if (entry.isFile() && entry.name.endsWith(".css")) {
+    } else if (
+      entry.isFile() &&
+      !isTestFile(entry.name) &&
+      STYLE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))
+    ) {
       out.push(full);
     }
   }
 };
 
-// Any .css under apps/web/src OTHER THAN index.css that declares a :root/.dark
-// token block or a competing --primary/--background is a single-source breach.
+// Any source under apps/web/src OTHER THAN index.css that declares a competing
+// --primary/--background (any file type) or a :root/.dark token block (in a
+// stylesheet) is a single-source breach.
 const findCompetingTokenSources = (): string[] => {
   const files: string[] = [];
-  collectCss(WEB_SRC, files);
+  collectStyleSources(WEB_SRC, files);
   const offenders: string[] = [];
   for (const file of files) {
     if (file === CSS_PATH) {
       continue;
     }
-    const css = read(file);
+    const text = read(file);
+    const isStylesheet = file.endsWith(".css");
     if (
-      ROOT_BLOCK_RE.test(css) ||
-      DARK_BLOCK_RE.test(css) ||
-      COMPETING_DECL_RE.test(css)
+      COMPETING_DECL_RE.test(text) ||
+      (isStylesheet && (ROOT_BLOCK_RE.test(text) || DARK_BLOCK_RE.test(text)))
     ) {
       offenders.push(file.slice(REPO_ROOT.length + 1));
     }
@@ -195,7 +207,7 @@ describe("index.css is the single normative front-end design-token source", () =
     expect(fontSans).toContain('"Inter Variable"');
   });
 
-  test("no other apps/web/src file declares a competing token block — index.css is the sole source", () => {
+  test("no other apps/web/src .css/.ts/.tsx file declares a competing token — index.css is the sole source", () => {
     expect(findCompetingTokenSources()).toEqual([]);
   });
 
