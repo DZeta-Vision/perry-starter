@@ -1,16 +1,20 @@
 // The daemon's outbound-fetch egress allowlist: a guard around native `fetch`
 // so a compromised dependency cannot exfiltrate. Every outbound call the daemon
-// makes goes through `guardedFetch`, which permits only HTTPS requests to a
-// host on the static allowlist and blocks everything else. Plain TS over native
-// `fetch` — no in-process SDK or WASM.
+// makes goes through `guardedFetch`, which permits only HTTPS requests to a host
+// on the static allowlist and blocks everything else — AND re-validates every
+// redirect hop, because native `fetch` follows 3xx transparently and an
+// allowlisted host could otherwise bounce the request to an off-list one.
+// Plain TS over native `fetch` — no in-process SDK or WASM.
 //
-// The named self-import below is deliberate: routing the internal audit call
-// through the module's own export binding keeps the audit observable to callers
-// (and tests) that wrap `auditEgressDenied`, rather than burying it behind a
-// local reference.
-import { auditEgressDenied as auditDenied } from "./egress-allowlist";
+// `fetch` and the audit sink are injectable via the optional `deps` arg, so a
+// test can drive the guard with a fake fetch and observe denials WITHOUT
+// stubbing the process-wide `globalThis.fetch` (which races concurrently
+// scheduled test files). Production callers omit `deps` and get native `fetch`
+// plus the real audit. The default `fetch` is resolved at call time so it never
+// captures a stale reference.
 
 const HTTPS = "https:";
+const MAX_REDIRECT_HOPS = 5;
 
 // Host-pinned allowlist, sourced from the deployment topology — not invented:
 //   - the cloud gatekeeper Worker (the daemon's single cloud egress target),
@@ -31,6 +35,11 @@ export const auditEgressDenied = (host: string): void => {
   process.stderr.write(`${JSON.stringify({ event: "egress.denied", host })}\n`);
 };
 
+export interface GuardedFetchDeps {
+  readonly audit?: (host: string) => void;
+  readonly fetch?: typeof globalThis.fetch;
+}
+
 const urlOf = (input: string | URL | Request): URL => {
   if (typeof input === "string") {
     return new URL(input);
@@ -41,19 +50,46 @@ const urlOf = (input: string | URL | Request): URL => {
   return new URL(input.url);
 };
 
-// Permit only HTTPS requests to an allowlisted host; a miss is audited and
-// rejected. Resolves the global `fetch` at call time so it never captures a
-// stale reference.
-export const guardedFetch = (
-  input: string | URL | Request,
-  init?: RequestInit
-): Promise<Response> => {
-  const url = urlOf(input);
+const isRedirectStatus = (status: number): boolean =>
+  status >= 300 && status < 400;
+
+// HTTPS + host ∈ allowlist, else audit and throw. Applied to the initial URL
+// and to every redirect target.
+const assertAllowed = (url: URL, audit: (host: string) => void): void => {
   if (url.protocol !== HTTPS || !EGRESS_ALLOWLIST.includes(url.hostname)) {
-    auditDenied(url.hostname);
-    return Promise.reject(
-      new Error(`egress denied: ${url.protocol}//${url.hostname}`)
-    );
+    audit(url.hostname);
+    throw new Error(`egress denied: ${url.protocol}//${url.hostname}`);
   }
-  return globalThis.fetch(input, init);
+};
+
+export const guardedFetch = async (
+  input: string | URL | Request,
+  init?: RequestInit,
+  deps: GuardedFetchDeps = {}
+): Promise<Response> => {
+  const doFetch = deps.fetch ?? globalThis.fetch;
+  const audit = deps.audit ?? auditEgressDenied;
+
+  let target = urlOf(input);
+  assertAllowed(target, audit);
+
+  // Follow redirects manually so each hop is re-validated before it is fetched.
+  let response = await doFetch(input, { ...init, redirect: "manual" });
+  for (let hop = 0; hop < MAX_REDIRECT_HOPS; hop++) {
+    if (!isRedirectStatus(response.status)) {
+      return response;
+    }
+    const location = response.headers.get("location");
+    if (location === null) {
+      return response;
+    }
+    target = new URL(location, target);
+    assertAllowed(target, audit);
+    response = await doFetch(target, { ...init, redirect: "manual" });
+  }
+
+  if (isRedirectStatus(response.status)) {
+    throw new Error(`egress denied: too many redirects to ${target.hostname}`);
+  }
+  return response;
 };

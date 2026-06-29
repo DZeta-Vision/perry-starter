@@ -76,3 +76,23 @@ describe("the egress-guard mutations each let a disallowed request through", () 
     ).toBe(false);
   });
 });
+
+describe("a guard that does not re-validate redirect hops lets an allowlisted host bounce off-list", () => {
+  test("blind redirect-following reaches the off-list host, while re-validating the hop throws", () => {
+    // BUGGY: validate only the initial URL, then follow the redirect blindly.
+    const followsBlindly = (startUrl: string, redirectTo: string): string => {
+      correctGuard(startUrl, ALLOWLIST); // initial URL is allowlisted — passes
+      return redirectTo; // BUG: the hop target is never re-validated
+    };
+    const reached = followsBlindly(
+      "https://worker.example.com/start",
+      "https://evil.example.com/steal"
+    );
+    // The blind guard "reached" the off-list host — the gate's blocked-expectation fails.
+    expect(reached).toBe("https://evil.example.com/steal");
+    // The CORRECT behavior re-validates the redirect target and throws.
+    expect(
+      throwsFor(() => correctGuard("https://evil.example.com/steal", ALLOWLIST))
+    ).toBe(true);
+  });
+});
