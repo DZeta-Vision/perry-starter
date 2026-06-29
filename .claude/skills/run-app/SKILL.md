@@ -1,9 +1,9 @@
 ---
 name: run-app
-description: Launch and drive the perry-starter app locally — the web dev server (browser UI over loopback) and the headless daemon target. Use when asked to run, start, serve, or screenshot the app, or to confirm a change works in the real running app.
+description: Launch and drive this app locally — the web dev server (browser UI over loopback) and the headless daemon target. Use when asked to run, start, serve, or screenshot the app, or to confirm a change works in the real running app.
 ---
 
-# Running perry-starter locally
+# Running the app locally
 
 The product is **local-first with a cross-target build seam** (`PERRY_TARGET`). There are two ways to "run the app"; pick by what you're verifying.
 
