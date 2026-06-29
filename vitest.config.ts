@@ -21,6 +21,10 @@ const inRepoEnv = {
   BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
   BETTER_AUTH_URL: "http://127.0.0.1:3000",
   CORS_ORIGIN: "http://127.0.0.1:3000",
+  GITHUB_CLIENT_ID: "test-github-client-id",
+  GITHUB_CLIENT_SECRET: "test-github-client-secret",
+  GOOGLE_CLIENT_ID: "test-google-client-id",
+  GOOGLE_CLIENT_SECRET: "test-google-client-secret",
 };
 
 export default defineConfig({

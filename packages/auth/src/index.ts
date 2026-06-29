@@ -20,6 +20,11 @@ import { recordAuthAudit } from "./auth-audit";
 import { VERIFICATION_TOKEN_TTL_SECONDS } from "./email-verification";
 import { HIBP_SCREENED_PATHS, screenPasswordForBreach } from "./hibp-screen";
 import {
+  GENERIC_OAUTH_ERROR_ROUTE,
+  oauthAccountLinking,
+  oauthSocialProviders,
+} from "./oauth";
+import {
   NIST_MAX_PASSWORD_LENGTH,
   NIST_MIN_PASSWORD_LENGTH,
 } from "./password-policy";
@@ -319,6 +324,16 @@ export const buildAuthOptions = (
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
   trustedOrigins: [env.CORS_ORIGIN],
+  // Server-side OAuth: GitHub + Google, with account linking confined to the
+  // trusted providers and matching verified emails. CSRF state/origin checks are
+  // left ON (better-auth defaults) — `account.skipStateCookieCheck` and
+  // `advanced.disableCSRFCheck`/`disableOriginCheck` are never set.
+  socialProviders: oauthSocialProviders,
+  account: { accountLinking: oauthAccountLinking },
+  // Any OAuth failure (a provider denial, a CSRF state mismatch/replay, an
+  // adapter exception) redirects to the SAME generic error surface — no provider
+  // name, error code, or stack leaked, no per-cause divergence.
+  onAPIError: { errorURL: GENERIC_OAUTH_ERROR_ROUTE },
   emailAndPassword: {
     // D5: no usable session token at registration — the token lands at the
     // post-verification sign-in, never auto-signed-in at sign-up.
