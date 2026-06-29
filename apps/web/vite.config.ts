@@ -2,7 +2,11 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import alchemy from "alchemy/cloudflare/tanstack-start";
-import { defaultClientConditions, defineConfig } from "vite";
+import {
+  defaultClientConditions,
+  defaultServerConditions,
+  defineConfig,
+} from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 // Build-time runtime-target seam: PERRY_TARGET selects the data/AI implementation
@@ -13,11 +17,16 @@ import tsconfigPaths from "vite-tsconfig-paths";
 const perryTargetCondition =
   process.env.PERRY_TARGET === "cloud-relay" ? "perry-cloud" : "perry-local";
 
+// The local-sidecar target builds the SPA/static shell (dist/client +
+// _shell.html) the daemon serves statically over loopback; the cloud-relay
+// target keeps the default full SSR output.
+const isLocalSidecar = perryTargetCondition === "perry-local";
+
 export default defineConfig({
   plugins: [
     tsconfigPaths(),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({ spa: { enabled: isLocalSidecar } }),
     viteReact(),
     alchemy(),
   ],
@@ -28,6 +37,12 @@ export default defineConfig({
     port: 3001,
   },
   ssr: {
+    // Server-leg resolution must select the same target impl as the client, so
+    // the SPA-shell prerender and the cloud SSR path never resolve the wrong
+    // (default) seam implementation server-side.
+    resolve: {
+      conditions: [perryTargetCondition, ...defaultServerConditions],
+    },
     noExternal: ["better-auth"],
   },
 });

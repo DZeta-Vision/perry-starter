@@ -15,8 +15,13 @@
 //   - primary <-> primary-foreground            >= 4.5:1  (text on the brand fill)
 //   - primary-as-link <-> background            >= 4.5:1  (teal used as a link/active colour)
 //   - focus-ring (ring) <-> background           >= 3:1   (non-text UI / focus indicator, WCAG 1.4.11)
+//   - sidebar-primary <-> sidebar                >= 4.5:1  (teal active-item on the sidebar surface)
+//   - sidebar-primary <-> sidebar-primary-foreground >= 4.5:1 (text on the active-item fill)
 //
-// Source of truth for tokens: apps/web/src/index.css.
+// Source of truth for tokens: apps/web/src/index.css by default. The CONTRAST_GATE_CSS
+// environment variable overrides it with an alternate token source, so callers can
+// measure a fixture stylesheet (e.g. a re-skinned --primary or a lightened
+// --sidebar-primary) without mutating the tracked file.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -24,7 +29,9 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..");
-const CSS_PATH = resolve(REPO_ROOT, "apps/web/src/index.css");
+const CSS_PATH = process.env.CONTRAST_GATE_CSS
+  ? resolve(process.env.CONTRAST_GATE_CSS)
+  : resolve(REPO_ROOT, "apps/web/src/index.css");
 
 const TEXT_CONTRAST_MIN = 4.5; // WCAG 1.4.3 AA, normal text
 const UI_CONTRAST_MIN = 3.0; // WCAG 1.4.11 AA, non-text / focus indicator
@@ -229,6 +236,18 @@ const REQUIRED_PAIRS = [
     fg: "--ring",
     bg: "--background",
     min: UI_CONTRAST_MIN,
+  },
+  {
+    label: "sidebar-primary (active-item) <-> sidebar",
+    fg: "--sidebar-primary",
+    bg: "--sidebar",
+    min: TEXT_CONTRAST_MIN,
+  },
+  {
+    label: "sidebar-primary <-> sidebar-primary-foreground",
+    fg: "--sidebar-primary-foreground",
+    bg: "--sidebar-primary",
+    min: TEXT_CONTRAST_MIN,
   },
 ];
 
