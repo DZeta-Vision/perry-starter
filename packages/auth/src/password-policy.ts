@@ -39,6 +39,50 @@ export const isNistLengthValid = (password: string): boolean =>
   password.length >= NIST_MIN_PASSWORD_LENGTH &&
   password.length <= NIST_MAX_PASSWORD_LENGTH;
 
+// The audit action recorded when the HIBP range API is unreachable and breach
+// screening falls OPEN. Mirrors the fail-open audit action the live HIBP screen
+// records, so the policy resolver and the live screen agree on the vocabulary the
+// operator sees.
+export const HIBP_FALLBACK_AUDIT = "auth.hibp_fallback";
+
+export type PasswordPolicyResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string };
+
+// NIST 800-63B is LENGTH-ONLY (12–128): no composition (digit/symbol/case) or
+// rotation rules. A 12-char all-lowercase passphrase is therefore valid by
+// construction; rejecting it would be a forbidden composition gate.
+export const validatePasswordPolicy = (
+  password: string
+): PasswordPolicyResult => {
+  if (password.length < NIST_MIN_PASSWORD_LENGTH) {
+    return { ok: false, reason: "too_short" };
+  }
+  if (password.length > NIST_MAX_PASSWORD_LENGTH) {
+    return { ok: false, reason: "too_long" };
+  }
+  return { ok: true };
+};
+
+// The breach-screen outcome resolver (fail-open on outage). Maps an injected HIBP
+// outcome to an acceptance decision: a CLEAN password is accepted with no audit,
+// a known-COMPROMISED password is rejected, and an UNREACHABLE range API fails
+// OPEN — the NIST-valid password is accepted and the fallback is audited, so a
+// third-party outage never bricks the only-unblocked action (forced change).
+// Acceptance of a credential requires BOTH validatePasswordPolicy(pw).ok AND this
+// resolver's `accept`, so fail-open never relaxes the NIST length floor.
+export const resolveBreachScreen = (input: {
+  hibp: "clean" | "compromised" | "unreachable";
+}): { accept: boolean; audit?: string } => {
+  if (input.hibp === "compromised") {
+    return { accept: false };
+  }
+  if (input.hibp === "unreachable") {
+    return { accept: true, audit: HIBP_FALLBACK_AUDIT };
+  }
+  return { accept: true };
+};
+
 // Uppercase hex SHA-1 of the input (the HIBP k-anonymity hash form).
 export const sha1HexUpper = async (input: string): Promise<string> => {
   const digest = await crypto.subtle.digest(

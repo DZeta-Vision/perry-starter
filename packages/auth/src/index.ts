@@ -33,6 +33,11 @@ import {
   personalOrgIdFor,
   provisionPersonalOrg,
 } from "./personal-org";
+import {
+  dispatchResetEmail,
+  RESET_PASSWORD_TOKEN_TTL_SECONDS,
+  resetEmailSender,
+} from "./reset-email";
 import { surrealAdapter } from "./surreal-adapter";
 import {
   dispatchVerificationEmail,
@@ -228,6 +233,15 @@ interface AdapterCreate {
   create: (args: { data: unknown; model: string }) => Promise<unknown>;
 }
 
+// The minimal adapter surface the prior-reset-token invalidation deletes
+// through (the same `context.context.adapter` the provisioning hook reaches).
+interface AdapterDeleteMany {
+  deleteMany: (args: {
+    model: string;
+    where: { field: string; value: unknown }[];
+  }) => Promise<number>;
+}
+
 // D1 personal-org provisioning, wired into `databaseHooks.user.create.after`. This
 // is the REAL hook that actually creates the personal organization (+ the owner
 // membership) for every self-registered member, so the session's
@@ -268,15 +282,34 @@ const provisionOnUserCreate = async (
 // existence-independent and the anti-enumeration normalizer surfaces it unchanged.
 const PASSWORD_COMPROMISED_MESSAGE = "auth.error.password_compromised";
 
+// The credential a screened path submits. Sign-up carries `password`; the forced-
+// change and reset paths carry `newPassword` — reading only `password` would leave
+// the new password on those paths silently UNSCREENED (the one HIBP control that
+// must cover the only-unblocked forced-change action). Prefer `newPassword` so
+// the change/reset surfaces are screened; fall back to `password` for sign-up.
+const credentialFromBody = (
+  body: { newPassword?: unknown; password?: unknown } | undefined
+): string | undefined => {
+  if (typeof body?.newPassword === "string") {
+    return body.newPassword;
+  }
+  if (typeof body?.password === "string") {
+    return body.password;
+  }
+  return;
+};
+
 const breachScreenBeforeHook = createAuthMiddleware(async (ctx) => {
   if (!HIBP_SCREENED_PATHS.has(ctx.path)) {
     return;
   }
-  const password = (ctx.body as { password?: unknown } | undefined)?.password;
-  if (typeof password !== "string") {
+  const candidate = credentialFromBody(
+    ctx.body as { newPassword?: unknown; password?: unknown } | undefined
+  );
+  if (candidate === undefined) {
     return;
   }
-  const { breached } = await screenPasswordForBreach(password);
+  const { breached } = await screenPasswordForBreach(candidate);
   if (breached) {
     throw new APIError("BAD_REQUEST", {
       code: "PASSWORD_COMPROMISED",
@@ -307,6 +340,65 @@ const sendVerificationEmail = async (
     },
     { audit: recordAuthAudit, send: verificationEmailSender() }
   );
+};
+
+// The reset-email dispatch wired into `emailAndPassword.sendResetPassword`. Same
+// SDK-free shape as the verification path: the real Resend sender is injected by
+// the worker; the default is a safe no-op. better-auth invokes this with the
+// minted single-use reset token + the reset URL; the dispatch is awaited out-of-
+// band so it never perturbs the byte-identical neutral reset-request response.
+// Params are `unknown` so the function fits the better-auth slot regardless of
+// its signature.
+const sendResetPasswordEmail = async (
+  data: unknown,
+  _request?: unknown
+): Promise<void> => {
+  const payload = data as {
+    token?: string;
+    url?: string;
+    user?: { email?: string; locale?: string };
+  };
+  await dispatchResetEmail(
+    {
+      locale: payload.user?.locale,
+      resetToken: payload.token ?? "",
+      resetUrl: payload.url ?? "",
+      to: payload.user?.email ?? "",
+    },
+    { audit: recordAuthAudit, send: resetEmailSender() }
+  );
+};
+
+// Prior-reset-token invalidation — token hardening on the SHIPPED path. better-
+// auth has NO native "one live reset token per user" control: each
+// /request-password-reset mints a fresh token and leaves any earlier one valid
+// until it independently expires or is consumed, so two mailed reset links can
+// be redeemable at once. We close that window on the verification-store create
+// seam — the ONLY place a reset token is persisted. Before a new verification
+// value is written, delete every prior verification row carrying the same
+// `value` (the user id the reset flow stores). The reset flow is the SOLE
+// verification-store consumer in this configuration — email verification uses a
+// stateless signed JWT and never touches this table — so matching on the user-id
+// `value` targets exactly that user's outstanding reset tokens. The new row is
+// not created until this `before` hook returns, so only PRIOR tokens are removed;
+// a freshly issued token immediately invalidates any earlier one. Reached via the
+// same `context.context.adapter` seam the personal-org provisioning uses; the
+// hook narrows internally so it fits the better-auth slot regardless of signature.
+const invalidatePriorResetTokens = async (
+  verification: unknown,
+  context?: unknown
+): Promise<void> => {
+  const adapter = (
+    context as { context?: { adapter?: AdapterDeleteMany } } | undefined
+  )?.context?.adapter;
+  const userId = (verification as { value?: unknown } | undefined)?.value;
+  if (!adapter || typeof userId !== "string" || userId.length === 0) {
+    return;
+  }
+  await adapter.deleteMany({
+    model: "verification",
+    where: [{ field: "value", value: userId }],
+  });
 };
 
 // --- The better-auth singleton ----------------------------------------------
@@ -343,6 +435,26 @@ export const buildAuthOptions = (
     maxPasswordLength: NIST_MAX_PASSWORD_LENGTH,
     minPasswordLength: NIST_MIN_PASSWORD_LENGTH,
     requireEmailVerification: true,
+    // Secure single-use reset: better-auth mints a token persisted in the
+    // verification store and CONSUMES it (deletes the row) on the first
+    // successful reset, so a replayed/already-used token finds nothing and is
+    // rejected — single-use is enforced on the shipped path, not bolted on. The
+    // token is time-boxed to 30 minutes (distinct from the 1h verify TTL). The
+    // token identifier is stored HASHED (see `verification.storeIdentifier`
+    // below) and a fresh request invalidates any prior token (see the
+    // `databaseHooks.verification` hook below). ENTROPY NOTE: better-auth mints
+    // the reset token with `generateId(24)` — 24 chars over a 62-symbol alphabet
+    // ≈ 143 bits — and the length is HARD-CODED in the library, with no config
+    // knob to raise it. 143-bit single-use + 30-min TTL + hashed-at-rest is the
+    // shipped floor; a ≥256-bit token would require replacing better-auth's
+    // generator and is deferred rather than faked.
+    resetPasswordTokenExpiresIn: RESET_PASSWORD_TOKEN_TTL_SECONDS,
+    // On a successful reset, ALL of the user's sessions are revoked (not just the
+    // current one), so no stale session survives the credential change.
+    revokeSessionsOnPasswordReset: true,
+    // Bilingual Resend reset email keyed off the account locale; the send path
+    // destructures { data, error } and never throws.
+    sendResetPassword: sendResetPasswordEmail,
   },
   // Bilingual Resend verification email, time-limited token (TTL 1h), sent on
   // sign-up. The send path destructures { data, error } and never throws.
@@ -351,6 +463,15 @@ export const buildAuthOptions = (
     sendOnSignUp: true,
     sendVerificationEmail,
   },
+  // Token-at-rest hardening: store the reset-token identifier HASHED, never the
+  // raw token. better-auth persists a reset token as a `verification` row keyed
+  // by `reset-password:<token>`; `storeIdentifier: "hashed"` persists
+  // base64url(SHA-256(identifier)) instead, so reading the verification store
+  // never yields a usable reset token. create/find/consume all hash the
+  // identifier symmetrically, so the single-use lookup is unaffected. The setting
+  // is global but affects ONLY the reset flow in this configuration — email
+  // verification uses a stateless signed JWT and never writes this table.
+  verification: { storeIdentifier: "hashed" },
   user: { additionalFields },
   // HIBP breach screening on the credential-setting paths — fail-OPEN (see
   // breachScreenBeforeHook). Replaces the throwing haveIBeenPwned() plugin.
@@ -376,6 +497,13 @@ export const buildAuthOptions = (
         // D1: provision the personal organization (+ owner membership) for every
         // self-registered member so activeOrganizationId is non-dangling.
         after: provisionOnUserCreate,
+      },
+    },
+    verification: {
+      create: {
+        // Token hardening: a freshly minted reset token invalidates any prior
+        // outstanding reset token for the same user (delete-prior-on-reissue).
+        before: invalidatePriorResetTokens,
       },
     },
   },

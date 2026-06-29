@@ -30,6 +30,10 @@ import {
   provisionPersonalOrg,
 } from "./personal-org";
 import {
+  configureResetEmailSender,
+  resetResetEmailSender,
+} from "./reset-email";
+import {
   configureVerificationEmailSender,
   dispatchVerificationEmail,
   type VerificationEmailSender,
@@ -188,6 +192,23 @@ const createAuthorityContext = () => {
   };
   configureVerificationEmailSender(sender);
 
+  // Capture the reset emails the real `sendResetPassword` dispatches, so a test
+  // can recover the minted single-use reset token (the worker's Resend sender is
+  // replaced by this capture double — the dispatch decision/path is unchanged).
+  const resetEmails: CapturedEmail[] = [];
+  configureResetEmailSender((intent) => {
+    resetEmails.push({
+      error: null,
+      locale: intent.locale,
+      template: intent.template,
+      variables: { ...intent.variables },
+    });
+    return Promise.resolve({
+      data: { id: `reset-${resetEmails.length}` },
+      error: null,
+    });
+  });
+
   const authority = betterAuth(buildAuthOptions(memoryAdapter(db)));
 
   const orgRoleFor = (userId: string | null): string | null => {
@@ -247,6 +268,38 @@ const createAuthorityContext = () => {
   const verifyEmail = (token: string): Promise<Response> =>
     verifyByToken(authority, token);
 
+  // Drive the REAL `/request-password-reset` route, wrapped by the production
+  // normalizer (the worker ingress). Returns the observable normalized surface
+  // AND the single-use reset token the dispatch minted (null for an unknown
+  // email, which sends nothing).
+  const requestPasswordReset = async (
+    email: string
+  ): Promise<{ surface: SurfaceResponse; token: string | null }> => {
+    const request = new Request(`${ORIGIN}/api/auth/request-password-reset`, {
+      body: JSON.stringify({ email }),
+      headers: { "content-type": "application/json", origin: ORIGIN },
+      method: "POST",
+    });
+    const raw = await authority.handler(request.clone());
+    const surface = await toSurface(await normalizeAuthResponse(request, raw));
+    const token =
+      (resetEmails.at(-1)?.variables.resetToken as string | undefined) ?? null;
+    return { surface, token };
+  };
+
+  // Drive the REAL `/reset-password` completion route (single-use token consumed
+  // on success; HIBP-screened on the newPassword field).
+  const resetPassword = async (input: {
+    newPassword: string;
+    token: string;
+  }): Promise<SurfaceResponse> => {
+    const response = await post(authority, "/reset-password", {
+      newPassword: input.newPassword,
+      token: input.token,
+    });
+    return await toSurface(response);
+  };
+
   // Resolve the session the bearer session-token belongs to (the projected
   // get-session body carries `activeOrganizationId`).
   const getSession = async (
@@ -271,14 +324,26 @@ const createAuthorityContext = () => {
     }
   };
 
+  // Read-only snapshot of the persisted verification rows (reset tokens land
+  // here). Lets a test assert HOW the reset-token identifier is stored at rest —
+  // hashed, never the plaintext `reset-password:<token>`.
+  const verificationRows = (): Record<string, unknown>[] =>
+    (db.verification as Record<string, unknown>[]).map((row) => ({
+      ...row,
+    }));
+
   return {
     auditActions: () => audits.slice(),
     authority,
     db,
     getSession,
+    requestPasswordReset,
+    resetPassword,
     sentEmails: () => emails.slice(),
+    sentResetEmails: () => resetEmails.slice(),
     signIn,
     signUp,
+    verificationRows,
     verifyEmail,
     withUnreachableHibp,
   };
@@ -293,9 +358,13 @@ export const createTestAuthority = () => {
     auditActions: ctx.auditActions,
     getSession: ctx.getSession,
     options: ctx.authority.options,
+    requestPasswordReset: ctx.requestPasswordReset,
+    resetPassword: ctx.resetPassword,
     sentEmails: ctx.sentEmails,
+    sentResetEmails: ctx.sentResetEmails,
     signIn: ctx.signIn,
     signUp: ctx.signUp,
+    verificationRows: ctx.verificationRows,
     verifyEmail: ctx.verifyEmail,
     withUnreachableHibp: ctx.withUnreachableHibp,
   };
@@ -534,9 +603,44 @@ export const signInNormalized = async (
   return toSurface(await normalizeAuthResponse(request, raw));
 };
 
+// Reset-request surface as the worker serves it (auth.handler + normalizer) for
+// the reset-request anti-enumeration proof. Byte-identical across the matrix
+// regardless of whether the email is registered/verified/unverified/unknown.
+export const resetRequestNormalized = async (
+  email: string
+): Promise<SurfaceResponse> => {
+  const ctx = currentMatrix();
+  const request = new Request(`${ORIGIN}/api/auth/request-password-reset`, {
+    body: JSON.stringify({ email }),
+    headers: { "content-type": "application/json", origin: ORIGIN },
+    method: "POST",
+  });
+  const raw = await ctx.authority.handler(request.clone());
+  return toSurface(await normalizeAuthResponse(request, raw));
+};
+
+// The RAW (un-normalized) reset-request surface — what better-auth returns before
+// the worker wrapper. Used to prove the wrapper is load-bearing (the raw body
+// differs from the canonical neutral envelope).
+export const resetRequestRaw = async (
+  email: string
+): Promise<SurfaceResponse> => {
+  const ctx = currentMatrix();
+  return toSurface(
+    await ctx.authority.handler(
+      new Request(`${ORIGIN}/api/auth/request-password-reset`, {
+        body: JSON.stringify({ email }),
+        headers: { "content-type": "application/json", origin: ORIGIN },
+        method: "POST",
+      })
+    )
+  );
+};
+
 // Tear down the injected module-level singletons (audit/HIBP/email) between files.
 export const resetAuthHarness = (): void => {
   matrix = null;
   resetAuthAudit();
   resetHibpRangeFetch();
+  resetResetEmailSender();
 };

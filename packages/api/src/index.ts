@@ -1,3 +1,7 @@
+import {
+  CHANGE_PASSWORD_PATH,
+  evaluateForcedPasswordChange,
+} from "@perry-starter/auth/forced-password-change";
 import { resolveGlobalRoles, roles } from "@perry-starter/auth/rbac";
 import { initTRPC, TRPCError } from "@trpc/server";
 
@@ -123,3 +127,74 @@ export const toErrorShape = (
   }
   return {};
 };
+
+// --- The forced-password-change gate middleware (the backend signal) ---------
+//
+// A `requirePasswordChange`-flagged account is blocked from EVERY tRPC op except
+// change-password. The middleware consumes the pure gate decision, emits the
+// x-require-password-change signal header on the response leg (so the frontend
+// can mount its non-dismissable gate), and throws the nearest native FORBIDDEN
+// carrying PASSWORD_CHANGE_REQUIRED in shape.data.code (it is NOT a native tRPC
+// code). The flag's session projection is wired on the worker host; here the
+// middleware reads it off the session context, exactly as the RBAC leg reads the
+// role claim. The gate ALWAYS leaves the change-password op open, so a flagged
+// account is never a dead-end.
+
+interface ForcedChangeContext {
+  readonly resHeaders?: Headers;
+  readonly session: {
+    readonly user: {
+      readonly id: string;
+      readonly requirePasswordChange: boolean;
+    };
+  } | null;
+}
+
+const tForcedChange = initTRPC.context<ForcedChangeContext>().create({
+  errorFormatter: ({ shape, error }) => ({
+    ...shape,
+    data: { ...shape.data, code: adCodeForError(error) ?? shape.data.code },
+  }),
+});
+
+// A procedure bound to its gate path: the middleware evaluates the flag against
+// THAT path, so the change-password op is permitted while every other op is
+// denied for a flagged account.
+const forcedChangeProcedure = (gatePath: string) =>
+  tForcedChange.procedure.use(({ ctx, next }) => {
+    if (!ctx.session) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+      });
+    }
+    const verdict = evaluateForcedPasswordChange({
+      path: gatePath,
+      requirePasswordChange: ctx.session.user.requirePasswordChange,
+    });
+    if (!verdict.allow) {
+      ctx.resHeaders?.set(verdict.signalHeader, "1");
+      throw new TRPCError({
+        cause: { code: verdict.code },
+        code: "FORBIDDEN",
+        message: "Password change required before any other operation",
+      });
+    }
+    return next();
+  });
+
+const forcedChangeRouter = tForcedChange.router({
+  // The ONE permitted op while flagged — always a forward path.
+  changePassword: forcedChangeProcedure(CHANGE_PASSWORD_PATH).mutation(() => ({
+    changed: true,
+  })),
+  // A representative blocked op — denied for a flagged account.
+  listDocuments: forcedChangeProcedure("documents.list").query(() => ({
+    documents: [] as const,
+  })),
+});
+
+// In-process caller exercising the forced-change middleware's deny/allow decision
+// directly (no network), mirroring the cross-user-read caller.
+export const createForcedChangeCaller = (ctx: ForcedChangeContext) =>
+  forcedChangeRouter.createCaller(ctx);

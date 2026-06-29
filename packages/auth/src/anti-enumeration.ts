@@ -26,10 +26,17 @@ import { neutralAuthEnvelope } from "@perry-starter/db/auth/neutral-response";
 // better-auth mounts every route under this base path (the default).
 const AUTH_BASE_PATH = "/api/auth";
 
-// Pre-auth registration surfaces normalized to the ONE neutral envelope.
+// Pre-auth surfaces normalized to the ONE neutral envelope. The
+// request-password-reset surface is here too: better-auth already returns a
+// generic message and runs a constant-work decoy for unknown emails, but its raw
+// body/status differ from the canonical envelope — collapsing it here makes the
+// response BYTE-IDENTICAL (status + body + headers) across the
+// registered/unregistered/verified/unverified/pending matrix, reusing the SAME
+// frozen envelope the other pre-auth surfaces serve.
 const NEUTRALIZED_PATHS: ReadonlySet<string> = new Set([
   `${AUTH_BASE_PATH}/sign-up/email`,
   `${AUTH_BASE_PATH}/send-verification-email`,
+  `${AUTH_BASE_PATH}/request-password-reset`,
 ]);
 
 const SIGN_IN_PATH = `${AUTH_BASE_PATH}/sign-in/email`;
