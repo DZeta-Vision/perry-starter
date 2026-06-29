@@ -1,5 +1,7 @@
-// The thin offline write queue (outbox) plus a default-safe flush-gate /
-// quarantine stub.
+import { decideFlush } from "./flush-gate";
+
+// The thin offline write queue (outbox) plus the first-reconnect revalidation
+// boundary, which delegates to the single flush-gate authority.
 //
 // Unflushed offline work lives here as a queue of deltas. Each item stamps its
 // owning subject (`scope_user_id`) AT ENQUEUE and carries a client-minted,
@@ -90,13 +92,12 @@ export const createOfflineWriteQueue = (): OfflineWriteQueue => {
   };
 };
 
-// The first-reconnect "revalidate before any queued flush" seam. This is a typed
-// boundary a later milestone fills with the real revalidation against the cloud
-// authority and the quarantine-on-revoke merge policy.
-//
-// TODO: wire the real revocation-discovery revalidation + quarantine policy
-// (a separately owned hardening milestone). Until then the gate is a
-// default-safe stub that always HOLDS — it never clears queued work for flushing.
+// The first-reconnect "revalidate before any queued flush" boundary. It owns no
+// decision of its own: the revoked/offline/valid outcome is decided by the
+// single flush-gate authority (decideFlush), and this boundary only adapts that
+// 3-valued decision to the queue's allow/hold contract. A flush is released only
+// when the gate would flush; every other outcome (offline, revoked → quarantine)
+// holds. The decision is never re-derived here.
 export type RevocationDecision = "allow" | "hold";
 
 export interface RevocationCheckInput {
@@ -109,6 +110,8 @@ export interface RevocationDiscoveryGate {
 }
 
 export const createRevocationDiscoveryGate = (): RevocationDiscoveryGate => ({
-  // Default-safe: HOLD until the real revalidation is wired.
-  revalidate: () => "hold",
+  revalidate: ({ online, revocationOutcome }) =>
+    decideFlush({ online, revalidated: true, revocationOutcome }) === "flush"
+      ? "allow"
+      : "hold",
 });
