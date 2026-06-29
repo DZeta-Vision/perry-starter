@@ -1,9 +1,9 @@
 // NON-PRODUCTION ES256 JWT fixtures for the DB-layer fail-closed verification
-// tests (Story 2.3 AC8). The public half of THIS fixed keypair is pinned into the
-// `DEFINE ACCESS … TYPE JWT ALGORITHM ES256 KEY …` clause in
-// packages/db/database/schema/documents.surql, so a token minted here with the
-// private half verifies at the data layer, while a tampered / expired /
-// wrong-algorithm token is rejected (fail closed).
+// tests. The public half of THIS fixed keypair is pinned into the
+// `DEFINE ACCESS … TYPE JWT ALGORITHM ES256 KEY …` clause in the database
+// schema, so a token minted here with the private half verifies at the data
+// layer, while a tampered / expired / wrong-algorithm token is rejected
+// (fail closed).
 //
 // This is TEST-ONLY material — the private key is committed deliberately because
 // it grants nothing beyond the disposable in-memory test sidecar. It is never the

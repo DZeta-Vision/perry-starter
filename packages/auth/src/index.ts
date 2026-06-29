@@ -5,7 +5,8 @@ import {
   userAdditionalFields,
 } from "@perry-starter/db/shapes/identity";
 import { env } from "@perry-starter/env/server";
-import { betterAuth } from "better-auth";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import {
   admin,
   bearer,
@@ -15,7 +16,23 @@ import {
 } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { recordAuthAudit } from "./auth-audit";
+import { VERIFICATION_TOKEN_TTL_SECONDS } from "./email-verification";
+import { HIBP_SCREENED_PATHS, screenPasswordForBreach } from "./hibp-screen";
+import {
+  NIST_MAX_PASSWORD_LENGTH,
+  NIST_MIN_PASSWORD_LENGTH,
+} from "./password-policy";
+import {
+  PERSONAL_ORG_OWNER_ROLE,
+  personalOrgIdFor,
+  provisionPersonalOrg,
+} from "./personal-org";
 import { surrealAdapter } from "./surreal-adapter";
+import {
+  dispatchVerificationEmail,
+  verificationEmailSender,
+} from "./verification-email";
 
 // packages/auth is the SOLE authn/authz authority (AD-8). It imports ONLY
 // packages/db (canonical identity shapes) and packages/env (the SURREAL_*/
@@ -83,8 +100,9 @@ export const parseMemberRoles = (roleString: string): string[] =>
 // itself.
 
 // The org-structural role of an organization's creator — DISTINCT from the
-// GLOBAL app-authz roles (member/admin/superadmin).
-const PERSONAL_ORG_CREATOR_ROLE = "owner";
+// GLOBAL app-authz roles (member/admin/superadmin). Single-sourced with the
+// provisioning module so the seeded active org and the provisioned row agree.
+const PERSONAL_ORG_CREATOR_ROLE = PERSONAL_ORG_OWNER_ROLE;
 
 const ORG_STRUCTURAL_ROLES = new Set(["owner", "admin", "member"]);
 
@@ -148,7 +166,7 @@ export const seedActiveOrganization = ({
 }: {
   user: Record<string, unknown>;
 }) => ({
-  activeOrganizationId: `org-personal-${str(user.id)}`,
+  activeOrganizationId: personalOrgIdFor(str(user.id)),
   creatorRole: PERSONAL_ORG_CREATOR_ROLE,
 });
 
@@ -196,19 +214,132 @@ for (const key of Object.keys(userAdditionalFields.shape)) {
   }
 }
 
+// --- Registration-time hooks (D1 personal-org provisioning + verification mail) -
+
+// The minimal adapter surface the provisioning writes through (the better-auth
+// `context.context.adapter`). Typed loosely so this module never couples to
+// better-auth's internal adapter generics.
+interface AdapterCreate {
+  create: (args: { data: unknown; model: string }) => Promise<unknown>;
+}
+
+// D1 personal-org provisioning, wired into `databaseHooks.user.create.after`. This
+// is the REAL hook that actually creates the personal organization (+ the owner
+// membership) for every self-registered member, so the session's
+// activeOrganizationId resolves to a real, non-dangling row. Params are `unknown`
+// (with `context` optional) so the function is assignable to the better-auth hook
+// slot regardless of its exact signature; it narrows internally.
+const provisionOnUserCreate = async (
+  createdUser: unknown,
+  context?: unknown
+): Promise<void> => {
+  const adapter = (
+    context as { context?: { adapter?: AdapterCreate } } | undefined
+  )?.context?.adapter;
+  const user = createdUser as { given_name?: string; id?: string };
+  if (!adapter || typeof user.id !== "string") {
+    return;
+  }
+  await provisionPersonalOrg(
+    { given_name: user.given_name, id: user.id },
+    {
+      createMembership: async (membership) => {
+        await adapter.create({ data: membership, model: "member" });
+      },
+      createOrganization: async (organization) => {
+        await adapter.create({ data: organization, model: "organization" });
+      },
+    }
+  );
+};
+
+// NIST 800-63B breach screening on the REAL credential-setting paths — the
+// fail-OPEN replacement for the throwing `haveIBeenPwned()` plugin (which 500s
+// sign-up on a pwnedpasswords.com outage). Wired as the better-auth `before`
+// middleware: a known-breached password is rejected with `PASSWORD_COMPROMISED`,
+// but on a range-API outage the NIST-valid password is accepted (the screen falls
+// open and records `auth.hibp_fallback`), so a third-party outage never bricks
+// sign-up. The screen runs BEFORE the account-existence check, so its rejection is
+// existence-independent and the anti-enumeration normalizer surfaces it unchanged.
+const PASSWORD_COMPROMISED_MESSAGE = "auth.error.password_compromised";
+
+const breachScreenBeforeHook = createAuthMiddleware(async (ctx) => {
+  if (!HIBP_SCREENED_PATHS.has(ctx.path)) {
+    return;
+  }
+  const password = (ctx.body as { password?: unknown } | undefined)?.password;
+  if (typeof password !== "string") {
+    return;
+  }
+  const { breached } = await screenPasswordForBreach(password);
+  if (breached) {
+    throw new APIError("BAD_REQUEST", {
+      code: "PASSWORD_COMPROMISED",
+      message: PASSWORD_COMPROMISED_MESSAGE,
+    });
+  }
+});
+
+// The verification-email dispatch wired into `emailVerification.sendVerificationEmail`.
+// SDK-free: the real Resend sender is injected by the worker via
+// `configureVerificationEmailSender`; the default is a safe no-op. Params are
+// `unknown` so the function fits the better-auth slot regardless of its signature.
+const sendVerificationEmail = async (
+  data: unknown,
+  _request?: unknown
+): Promise<void> => {
+  const payload = data as {
+    token?: string;
+    url?: string;
+    user?: { email?: string; locale?: string };
+  };
+  await dispatchVerificationEmail(
+    {
+      locale: payload.user?.locale,
+      to: payload.user?.email ?? "",
+      verifyToken: payload.token ?? "",
+      verifyUrl: payload.url ?? "",
+    },
+    { audit: recordAuthAudit, send: verificationEmailSender() }
+  );
+};
+
 // --- The better-auth singleton ----------------------------------------------
 
-export const auth = betterAuth({
-  database: surrealAdapter,
+// The full authority config, parameterized ONLY by the storage adapter. Production
+// passes the SurrealDB-over-HTTP adapter; the acceptance harness passes an in-memory
+// adapter so tests drive the SAME plugins, the SAME breach-screen before-hook, the
+// SAME registration/session hooks, and the SAME options — never a synthetic
+// parallel layer. Swapping the adapter is the only difference between the shipped
+// authority and the in-process test authority.
+export const buildAuthOptions = (
+  database: BetterAuthOptions["database"]
+): BetterAuthOptions => ({
+  database,
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
   trustedOrigins: [env.CORS_ORIGIN],
   emailAndPassword: {
+    // D5: no usable session token at registration — the token lands at the
+    // post-verification sign-in, never auto-signed-in at sign-up.
+    autoSignIn: false,
     enabled: true,
-    minPasswordLength: 12,
-    maxPasswordLength: 128,
+    // NIST 800-63B length bounds (single-sourced; no composition/rotation rules).
+    maxPasswordLength: NIST_MAX_PASSWORD_LENGTH,
+    minPasswordLength: NIST_MIN_PASSWORD_LENGTH,
+    requireEmailVerification: true,
+  },
+  // Bilingual Resend verification email, time-limited token (TTL 1h), sent on
+  // sign-up. The send path destructures { data, error } and never throws.
+  emailVerification: {
+    expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
+    sendOnSignUp: true,
+    sendVerificationEmail,
   },
   user: { additionalFields },
+  // HIBP breach screening on the credential-setting paths — fail-OPEN (see
+  // breachScreenBeforeHook). Replaces the throwing haveIBeenPwned() plugin.
+  hooks: { before: breachScreenBeforeHook },
   databaseHooks: {
     session: {
       create: {
@@ -223,6 +354,13 @@ export const auth = betterAuth({
               }).activeOrganizationId,
             },
           }),
+      },
+    },
+    user: {
+      create: {
+        // D1: provision the personal organization (+ owner membership) for every
+        // self-registered member so activeOrganizationId is non-dangling.
+        after: provisionOnUserCreate,
       },
     },
   },
@@ -253,3 +391,5 @@ export const auth = betterAuth({
     tanstackStartCookies(),
   ],
 });
+
+export const auth = betterAuth(buildAuthOptions(surrealAdapter));
