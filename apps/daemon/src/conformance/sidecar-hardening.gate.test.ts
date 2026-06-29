@@ -39,6 +39,26 @@ const REQUIRED_HARDENING = [
 const findMissingHardening = (source: string): string[] =>
   REQUIRED_HARDENING.filter((flag) => !source.includes(flag));
 
+// --- Detector A2: --deny-net argv ordering ---
+// `--deny-net` is variadic, so it must precede a value-less deny flag and the
+// datastore positional must trail every deny flag. If `--deny-net` sits directly
+// before the backend positional it swallows that token, the datastore silently
+// falls back to in-memory, and outbound net is left at its default instead of
+// blanket-denied.
+const denyNetOrderingIsSafe = (code: string): boolean => {
+  const denyNet = code.indexOf('"--deny-net"');
+  const denyGuests = code.indexOf('"--deny-guests"');
+  const denyScripting = code.indexOf('"--deny-scripting"');
+  const backend = code.indexOf("config.backend");
+  if (denyNet === -1 || backend === -1) {
+    return false;
+  }
+  const precedesAValuelessFlag = denyNet < Math.max(denyGuests, denyScripting);
+  const backendTrails =
+    backend > denyNet && backend > denyGuests && backend > denyScripting;
+  return precedesAValuelessFlag && backendTrails;
+};
+
 // --- Detector B: Bearer-not-root in the query path (comment-resistant) ---
 
 const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
@@ -60,8 +80,15 @@ const findRootCredentialReads = (source: string): string[] => {
 
 describe("the surreal sidecar supervisor is hardened at the source layer", () => {
   test("the spawn-args carry --bind 127.0.0.1 and all three deny capabilities", () => {
-    const source = readFileSync(SUPERVISOR_FILE, "utf8");
-    expect(findMissingHardening(source)).toEqual([]);
+    // Strip comments first: the module documents these flags in prose, so a bare
+    // substring check would pass even if a flag were dropped from the real args.
+    const code = stripJsComments(readFileSync(SUPERVISOR_FILE, "utf8"));
+    expect(findMissingHardening(code)).toEqual([]);
+  });
+
+  test("the variadic --deny-net precedes a value-less flag and the datastore positional trails it (cannot swallow the backend)", () => {
+    const code = stripJsComments(readFileSync(SUPERVISOR_FILE, "utf8"));
+    expect(denyNetOrderingIsSafe(code)).toBe(true);
   });
 
   test("the per-request DB query path uses a scoped record-access Bearer session and reads no root credentials", () => {

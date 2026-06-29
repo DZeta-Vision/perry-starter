@@ -17,6 +17,15 @@ const REQUIRED_HARDENING = [
 const findMissingHardening = (source: string): string[] =>
   REQUIRED_HARDENING.filter((flag) => !source.includes(flag));
 
+// The variadic-flag footgun: `--deny-net` placed directly before the trailing
+// datastore positional swallows it. Unsafe iff `--deny-net` is the last flag
+// before the positional element.
+const denyNetSwallowsBackend = (argsJson: string): boolean => {
+  const args = JSON.parse(argsJson) as string[];
+  const denyNet = args.indexOf("--deny-net");
+  return denyNet !== -1 && denyNet === args.length - 2;
+};
+
 const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
 const LINE_COMMENT_RE = /(^|[^:])\/\/.*$/gm;
 const stripJsComments = (source: string): string =>
@@ -50,6 +59,25 @@ describe("the spawn-args detector fires when a deny flag or the bind is dropped"
 
   test("the fully-hardened spawn-args stay green (not always-red)", () => {
     expect(findMissingHardening(HARDENED_ARGS)).toEqual([]);
+  });
+
+  test("a deny flag present ONLY in a comment is still reported missing after stripping (comment-resistant)", () => {
+    const commentOnly =
+      '// the supervisor docs mention --deny-net in prose\nconst args = ["start","--bind","127.0.0.1:0","--deny-guests","--deny-scripting","memory"];';
+    expect(findMissingHardening(stripJsComments(commentOnly))).toContain(
+      "--deny-net"
+    );
+  });
+});
+
+describe("the --deny-net argv-ordering detector fires when the flag swallows the datastore positional", () => {
+  test("--deny-net placed directly before the backend positional reddens; ordering it before a value-less flag stays green", () => {
+    const swallowing =
+      '["start","--bind","127.0.0.1:0","--deny-guests","--deny-scripting","--deny-net","memory"]';
+    const safe =
+      '["start","--bind","127.0.0.1:0","--deny-net","--deny-guests","--deny-scripting","memory"]';
+    expect(denyNetSwallowsBackend(swallowing)).toBe(true);
+    expect(denyNetSwallowsBackend(safe)).toBe(false);
   });
 });
 
