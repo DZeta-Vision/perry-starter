@@ -8,6 +8,8 @@
     "./shapes/delta-envelope": "./src/shapes/delta-envelope.ts",
     "./shapes/document-projection": "./src/shapes/document-projection.ts",
     "./shapes/audit-entry": "./src/shapes/audit-entry.ts",
+    "./shapes/identity": "./src/shapes/identity.ts",
+    "./shapes/session-payload": "./src/shapes/session-payload.ts",
     "./collaboration-mode": "./src/collaboration-mode.ts",
     "./documents": "./src/documents.ts"
   },
