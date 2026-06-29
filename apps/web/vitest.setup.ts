@@ -8,9 +8,14 @@ import { afterEach, vi } from "vitest";
 
 // Vitest globals are not enabled, so @testing-library/react's automatic
 // per-test unmount does not register itself; do it explicitly so rendered DOM
-// does not accumulate across tests in a file.
+// does not accumulate across tests in a file. next-themes writes the resolved
+// theme to <html> (class + colorScheme) and persists it to localStorage, so
+// reset both as well — otherwise a theme set in one test leaks into the next.
 afterEach(() => {
   cleanup();
+  document.documentElement.className = "";
+  document.documentElement.style.colorScheme = "";
+  localStorage.clear();
 });
 
 // jsdom does not implement matchMedia; next-themes reads it for the system

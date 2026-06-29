@@ -11,7 +11,17 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "next-themes";
 import type { ComponentType, ReactNode } from "react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+
+// UserMenu (rendered inside the header) calls authClient.useSession(), which
+// fires a real network fetch on mount. In a jsdom unit test that has no server,
+// the pending request adds nondeterministic latency. Stub it to a resolved,
+// signed-out session so the shell renders deterministically and fast.
+vi.mock("@/lib/auth-client", () => ({
+  authClient: {
+    useSession: () => ({ data: null, isPending: false }),
+  },
+}));
 
 const THEME_NAME_RE = /theme|appearance|dark|light/i;
 const LANGUAGE_NAME_RE = /FR|EN|language|langue/i;
@@ -44,6 +54,7 @@ const withTheme = (node: ReactNode): ReactNode => (
 
 describe("the app-shell loads its toggles, sign-in form, and neutral-teal token", () => {
   test("a light/dark theme toggle is present with an accessible name and drives the theme on activation (system default, per-device persist)", async () => {
+    const user = userEvent.setup({ delay: null, pointerEventsCheck: 0 });
     const Shell = await loadShell();
     render(withTheme(<Shell />));
 
@@ -52,7 +63,7 @@ describe("the app-shell loads its toggles, sign-in form, and neutral-teal token"
 
     // Anti-vacuous: activating it actually drives next-themes (sets the `dark`
     // class on <html>), not a decorative control.
-    await userEvent.click(toggle);
+    await user.click(toggle);
     expect(document.documentElement).toHaveClass("dark");
   });
 

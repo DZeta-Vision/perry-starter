@@ -41,6 +41,11 @@ export default defineConfig({
           environment: "jsdom",
           setupFiles: ["./apps/web/vitest.setup.ts"],
           include: ["apps/web/**/*.test.{ts,tsx}"],
+          // The shell-render integration tests legitimately take ~2s (jsdom
+          // mount of the full header graph); under multi-project CI contention
+          // that can approach the 5s default and spuriously time out. Headroom
+          // costs nothing for passing tests and still fails a real hang.
+          testTimeout: 15_000,
         },
         resolve: {
           alias: {
@@ -75,6 +80,9 @@ export default defineConfig({
           // flake without weakening any control. (Egress gates now inject `fetch`
           // rather than stubbing the global, so the other race source is gone.)
           poolOptions: { forks: { singleFork: true } },
+          // Sidecar spawn + /health poll can be slow under CI contention; give
+          // the same headroom as the web project.
+          testTimeout: 15_000,
         },
       },
     ],
