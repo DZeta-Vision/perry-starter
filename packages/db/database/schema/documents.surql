@@ -12,9 +12,20 @@
 -- (not a coarse system user). Sign-up registers a user; sign-in authenticates an
 -- existing one. The unique email index makes registration idempotent.
 DEFINE ACCESS account ON DATABASE TYPE RECORD
-  SIGNUP ( CREATE user SET email = $email, pass = crypto::argon2::generate($pass) )
+  SIGNUP ( CREATE user SET email = $email, pass = crypto::argon2::generate($pass), role = $role ?? 'member' )
   SIGNIN ( SELECT * FROM user WHERE email = $email AND crypto::argon2::compare(pass, $pass) )
   DURATION FOR TOKEN 18m, FOR SESSION 12h;
+
+-- DB-layer JWT verification (the second leg's offline-token check). A presented
+-- Bearer is accepted ONLY if it is an unexpired token signed by the pinned ES256
+-- public key; a tampered / expired / wrong-algorithm token fails closed (the
+-- request is rejected, $auth never resolves, row PERMISSIONS deny). The key is a
+-- NON-PROD test public key whose private half lives in @perry-starter/auth/test-jwt;
+-- production verification uses the cloud authority's rotating ES256 JWKS.
+DEFINE ACCESS api ON DATABASE TYPE JWT ALGORITHM ES256 KEY "-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfjrw6CpYRRgSsB9myFHWEG5hsGBl
+/UeQHpuVS6j17loMAtMiXzarmp/zKupyPCHIxiaxiZaSXPohTuOBy6iiNw==
+-----END PUBLIC KEY-----";
 
 -- The credential table is sealed to record-access sessions: PERMISSIONS NONE
 -- means no scoped session can read or mutate any credential row, so one user can
@@ -30,6 +41,10 @@ DEFINE ACCESS account ON DATABASE TYPE RECORD
 DEFINE TABLE user SCHEMAFULL PERMISSIONS NONE;
 DEFINE FIELD email ON user TYPE string;
 DEFINE FIELD pass ON user TYPE string;
+-- The GLOBAL app-authz role (member/admin/superadmin), set from the signup claim
+-- and defaulting to the lowest tier. This is the claim the row-level PERMISSIONS
+-- read as $auth.role — distinct from any org-structural role.
+DEFINE FIELD role ON user TYPE string DEFAULT 'member';
 
 DEFINE INDEX user_email ON user FIELDS email UNIQUE;
 
@@ -55,3 +70,24 @@ DEFINE FIELD scope_user_id ON document_delta TYPE string;
 DEFINE FIELD doc_id ON document_delta TYPE string;
 DEFINE FIELD cursor ON document_delta TYPE int;
 DEFINE FIELD payload ON document_delta TYPE string;
+
+-- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
+-- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim
+-- $auth.role split on ',', never an org-structural role). NO role — not even
+-- superadmin — may update or delete an entry: FOR update, delete NONE holds for
+-- everyone, so the trail can never be rewritten. The escalation predicate here is
+-- the one the row-PERMISSIONS generator emits from the single-sourced matrix.
+DEFINE TABLE audit_log SCHEMAFULL
+  PERMISSIONS
+    FOR create FULL
+    FOR select WHERE string::split($auth.role, ',') CONTAINS 'admin' OR string::split($auth.role, ',') CONTAINS 'superadmin'
+    FOR update, delete NONE;
+
+DEFINE FIELD action ON audit_log TYPE string;
+-- actor_id is the AUTHENTICATED writer, never client-supplied: VALUE recomputes
+-- it from the session's $auth on every write, so a forged actor_id in the create
+-- payload is overwritten by type::string($auth) (the record-access user's id).
+-- This closes the write-authenticity hole that a plain DEFAULT '' left open while
+-- keeping the trail append-only (FOR update, delete NONE above).
+DEFINE FIELD actor_id ON audit_log TYPE string VALUE type::string($auth);
+DEFINE FIELD created_at ON audit_log TYPE datetime DEFAULT time::now() READONLY;

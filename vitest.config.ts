@@ -64,6 +64,19 @@ export default defineConfig({
           include: ["packages/**/*.test.ts", "scripts/**/*.test.ts"],
           env: inRepoEnv,
         },
+        resolve: {
+          alias: {
+            // TEST-ONLY shim: the DB-layer ES256 fail-closed test in packages/data
+            // mints tokens with the non-prod fixture that pairs with the schema's
+            // JWT public key. The fixture lives in packages/auth, but packages/data
+            // must NOT declare a build-graph dependency on the auth tier (the seam
+            // tier sits below auth). This alias resolves the fixture for the test
+            // runner only; it adds no runtime/package.json edge.
+            "@perry-starter/auth/test-jwt": fileURLToPath(
+              new URL("./packages/auth/src/test-jwt.ts", import.meta.url)
+            ),
+          },
+        },
       },
       {
         // apps/daemon — the PerryTS host logic (serve-path, reply.type,

@@ -31,16 +31,33 @@ import { surrealAdapter } from "./surreal-adapter";
 // row-level PERMISSIONS leg cannot drift. The GLOBAL application roles are a
 // single hierarchy member < admin < superadmin, ORTHOGONAL to the
 // organization-structural role (owner/admin/member).
-const statement = {
+// The ONE statement map. `document` is the owner-data capability; `user` is the
+// admin tier (role assignment / listing); `audit` is the append-only audit read
+// tier. Both enforcement legs (the in-process tRPC middleware AND the SurrealDB
+// row-level PERMISSIONS) derive from THIS object so they cannot drift. Exported
+// so the row-PERMISSIONS generator reads the same resource set.
+export const statement = {
   document: ["create", "read", "update", "delete"],
+  user: ["list", "set-role"],
+  audit: ["read"],
 } as const;
 
 export const ac = createAccessControl(statement);
 
+// member < admin < superadmin. `set-role` is held by superadmin ONLY (role
+// assignment is superadmin-gated; the numeric hierarchy forbids self-elevation).
 export const roles = {
   member: ac.newRole({ document: ["read"] }),
-  admin: ac.newRole({ document: ["create", "read", "update", "delete"] }),
-  superadmin: ac.newRole({ document: ["create", "read", "update", "delete"] }),
+  admin: ac.newRole({
+    document: ["create", "read", "update", "delete"],
+    user: ["list"],
+    audit: ["read"],
+  }),
+  superadmin: ac.newRole({
+    document: ["create", "read", "update", "delete"],
+    user: ["list", "set-role"],
+    audit: ["read"],
+  }),
 };
 
 // Re-exposed from the single-sourced db shape (member:0 < admin:1 < superadmin:2).
