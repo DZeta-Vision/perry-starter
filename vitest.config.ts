@@ -69,6 +69,12 @@ export default defineConfig({
           environment: "node",
           include: ["apps/daemon/**/*.test.ts"],
           env: inRepoEnv,
+          // Run the daemon files serially in a single fork: several spawn a real
+          // in-memory `surreal` sidecar, and running them concurrently races on
+          // sidecar spawn/health-poll/ports. Single-fork isolation removes that
+          // flake without weakening any control. (Egress gates now inject `fetch`
+          // rather than stubbing the global, so the other race source is gone.)
+          poolOptions: { forks: { singleFork: true } },
         },
       },
     ],
