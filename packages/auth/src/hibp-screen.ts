@@ -1,4 +1,5 @@
-// HIBP breach screening on the REAL sign-up path — fail-OPEN, not the brick.
+// HIBP breach screening on the REAL credential-setting paths — fail-OPEN, not the
+// brick.
 //
 // better-auth's `haveIBeenPwned()` plugin wraps `ctx.password.hash` and throws
 // `APIError(INTERNAL_SERVER_ERROR)` on ANY range-API fetch error — i.e. it FAILS
@@ -31,8 +32,10 @@ export const resetHibpRangeFetch = (): void => {
 
 // The credential-setting paths screened on the cloud authority. Mirrors the
 // haveIBeenPwned() default set for the flows perry-starter actually exposes —
-// sign-up now, the forced-change / reset paths reuse the SAME screen when those
-// surfaces land — minus the fail-CLOSED throw on outage.
+// minus the fail-CLOSED throw on outage. ALL THREE run the SAME screen today:
+// `/sign-up/email` (carrying `password`), `/reset-password`, and
+// `/change-password` (both carrying `newPassword`); the before-hook reads
+// whichever field is present and fails OPEN on a range-API outage.
 export const HIBP_SCREENED_PATHS: ReadonlySet<string> = new Set([
   "/sign-up/email",
   "/change-password",

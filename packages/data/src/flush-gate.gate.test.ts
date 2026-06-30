@@ -11,12 +11,6 @@ import { describe, expect, test } from "vitest";
 // The gate is a PURE function of injected inputs: connectivity, whether the
 // session has been revalidated against the authority, the revocation outcome,
 // and the elapsed time since reconnect. No wall clock, no network, no timers.
-//
-// RED PHASE: every test is `test.skip`. The module
-// `packages/data/src/flush-gate.ts` does not exist yet — it lands in this
-// story's dev phase. Imports of it are dynamic `await import(...)` inside the
-// skipped body; source-scan `readFileSync` is likewise inside the skipped body.
-// Top-level static imports are limited to `vitest` and `node:*`.
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // packages/data/src
 const GATE_FILE = resolve(HERE, "flush-gate.ts");
@@ -111,6 +105,24 @@ const revalidatedOutcomeViolations = (m: FlushGateModule): string[] => {
   return violations;
 };
 
+// Fail closed on the absence of a verdict: a revalidated session with NO
+// affirmative outcome yet must HOLD (and retry) — it must never flush an
+// unproven session on the mere absence of a revocation result.
+const failClosedOnUndefinedViolations = (m: FlushGateModule): string[] => {
+  const violations: string[] = [];
+  const decision = m.decideFlush({
+    online: true,
+    revalidated: true,
+    sinceReconnectMs: 1000,
+  });
+  if (decision !== "hold") {
+    violations.push(
+      "a revalidated session with no affirmative outcome must hold, not flush"
+    );
+  }
+  return violations;
+};
+
 // The SLA bounds are the fixed 300 s / 600 s literals.
 const slaConstantViolations = (m: FlushGateModule): string[] => {
   const violations: string[] = [];
@@ -142,10 +154,9 @@ const INDEPENDENT_REVOCATION_BRANCH_RE =
 const carriesIndependentDecision = (source: string): boolean =>
   INDEPENDENT_REVOCATION_BRANCH_RE.test(stripJsComments(source));
 
-// `./flush-gate` does not exist yet (this story's dev phase adds it). Pass the
-// specifier as a variable + `@vite-ignore` so the bundler does not eagerly
-// resolve it at collection time and `tsc` does not try to type the module; the
-// import only runs at runtime (never, while the tests are skipped).
+// Load `./flush-gate` through a variable specifier + `@vite-ignore` dynamic
+// import so the bundler resolves it at runtime rather than eagerly at collection
+// time.
 const FLUSH_GATE_SPEC = "./flush-gate";
 
 const loadModule = async (): Promise<FlushGateModule> =>
@@ -169,6 +180,11 @@ describe("the live flush-gate revalidates before flushing and quarantines revoke
   test("a revalidated, still-valid session flushes while a session revoked while offline is quarantined", async () => {
     const m = await loadModule();
     expect(revalidatedOutcomeViolations(m)).toEqual([]);
+  });
+
+  test("a revalidated session with no affirmative outcome holds (fail closed) rather than flushing", async () => {
+    const m = await loadModule();
+    expect(failClosedOnUndefinedViolations(m)).toEqual([]);
   });
 
   test("the revocation SLA bounds are the fixed five-minute and ten-minute literals", async () => {

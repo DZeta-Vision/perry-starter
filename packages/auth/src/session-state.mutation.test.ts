@@ -24,19 +24,13 @@ interface EvaluateInput {
   readonly refreshOutcome?: "ok" | "failed";
 }
 
-interface FlushInput {
-  readonly online: boolean;
-  readonly revocationOutcome?: "valid" | "revoked";
-  readonly state: SessionState;
-}
-
 interface SessionModule {
   readonly ABSOLUTE_SESSION_MS: number;
   readonly canEnqueue: (state: SessionState) => boolean;
-  readonly canFlush: (input: FlushInput) => "hold" | boolean;
   readonly evaluateSession: (input: EvaluateInput) => SessionState;
   readonly guardDataAccess: (state: SessionState) => "allow" | "block";
   readonly IDLE_TIMEOUT_MS: number;
+  readonly mustForceRefresh: (input: EvaluateInput) => boolean;
   readonly SKEW_TOLERANCE_MS: number;
 }
 
@@ -60,6 +54,7 @@ interface ReducerOverrides {
   readonly ceilingFromDeviceTime?: boolean; // ceiling = now + 8h (device time)
   readonly degradeOfflineExpiry?: boolean; // offline-expiry → SESSION_EXPIRED
   readonly expireOnOkRefresh?: boolean; // an `ok` refresh → SESSION_EXPIRED
+  readonly neverForceRefresh?: boolean; // trust a past-ceiling token (no refresh)
   readonly reauthOnOfflineEdge?: boolean; // any offline row → SESSION_EXPIRED
   readonly skewMs?: number; // override the fixed skew bound
   readonly skewOnCeiling?: boolean; // apply skew slack to the ceiling
@@ -110,14 +105,18 @@ const makeModule = (overrides: ReducerOverrides = {}): SessionModule => {
     IDLE_TIMEOUT_MS: THIRTY_MIN_MS,
     SKEW_TOLERANCE_MS: skew,
     canEnqueue: (state) => guardDataAccess(state) === "allow",
-    canFlush: ({ online, revocationOutcome }) => {
-      if (!online) {
-        return false;
-      }
-      return revocationOutcome === "revoked" ? "hold" : true;
-    },
     evaluateSession,
     guardDataAccess,
+    mustForceRefresh: ({ claims, now, online, refreshOutcome }) => {
+      if (overrides.neverForceRefresh) {
+        return false;
+      }
+      return (
+        online &&
+        refreshOutcome === undefined &&
+        now >= claims.iat + EIGHT_HOURS_MS
+      );
+    },
   };
 };
 
@@ -222,6 +221,44 @@ const ceilingViolations = (m: SessionModule, iat: number): string[] => {
   return violations;
 };
 
+const mustForceRefreshViolations = (
+  m: SessionModule,
+  claims: SessionClaims
+): string[] => {
+  const violations: string[] = [];
+  const ceiling = claims.iat + m.ABSOLUTE_SESSION_MS;
+  if (!m.mustForceRefresh({ claims, now: ceiling, online: true })) {
+    violations.push(
+      "past the ceiling an online client with no refresh result must force a refresh"
+    );
+  }
+  if (
+    m.mustForceRefresh({
+      claims,
+      now: claims.iat + TOKEN_TTL_MS / 2,
+      online: true,
+    })
+  ) {
+    violations.push("below the ceiling no forced refresh is required");
+  }
+  if (m.mustForceRefresh({ claims, now: ceiling + 1, online: false })) {
+    violations.push("an offline client must never be forced to refresh");
+  }
+  if (
+    m.mustForceRefresh({
+      claims,
+      now: ceiling + 1,
+      online: true,
+      refreshOutcome: "ok",
+    })
+  ) {
+    violations.push(
+      "once a refresh result is in hand no further forced refresh is required"
+    );
+  }
+  return violations;
+};
+
 // --- Source detector (replicated from the gate) ------------------------------
 
 const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
@@ -315,6 +352,19 @@ describe("the data-path checker fires on an offline-blocking guard", () => {
       dataPathViolations(makeModule({ blockLocalGrace: true })).length
     ).toBeGreaterThan(0);
     expect(dataPathViolations(makeModule())).toEqual([]);
+  });
+});
+
+describe("the force-refresh checker fires on a reducer that trusts a past-ceiling token", () => {
+  test("a reducer that never forces a refresh past the ceiling reddens; the clean reducer stays green", () => {
+    const claims = claimsAt(IAT);
+    expect(
+      mustForceRefreshViolations(
+        makeModule({ neverForceRefresh: true }),
+        claims
+      ).length
+    ).toBeGreaterThan(0);
+    expect(mustForceRefreshViolations(makeModule(), claims)).toEqual([]);
   });
 });
 

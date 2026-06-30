@@ -21,7 +21,9 @@
 //   - A session revoked while offline is QUARANTINED on reconnect — the queue is
 //     held intact (neither merged nor discarded), each item's stamped owning
 //     subject preserved — never flushed.
-//   - A revalidated, still-valid session releases for flush.
+//   - A revalidated, AFFIRMATIVELY-VALID session releases for flush; the absence
+//     of an outcome (revalidated but no verdict yet) HOLDS — flush never opens on
+//     the absence of a verdict (fail closed).
 //   - The revocation SLA is live: revalidation is expected within the target
 //     window and MUST land before the hard ceiling; past the hard ceiling with
 //     no successful revalidation the queue is quarantined rather than left in an
@@ -70,9 +72,14 @@ export const decideFlush = ({
   }
 
   // Revalidated: a session revoked while offline is quarantined (queue held
-  // intact, never flushed); a still-valid session releases for flush.
+  // intact, never flushed); an affirmatively-valid session releases for flush.
   if (revocationOutcome === "revoked") {
     return "quarantine";
   }
-  return "flush";
+  if (revocationOutcome === "valid") {
+    return "flush";
+  }
+  // revalidated flag set but no affirmative outcome yet -> fail closed: hold and
+  // retry, never flush an unproven session on the absence of a verdict.
+  return "hold";
 };

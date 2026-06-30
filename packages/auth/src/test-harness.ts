@@ -221,6 +221,17 @@ const createAuthorityContext = () => {
     return member?.role ?? null;
   };
 
+  // Read-only lookup of a persisted organization row by id. Lets a test assert
+  // the auto-provisioned personal org is stored under its DETERMINISTIC id (the
+  // same id the session derives as activeOrganizationId) rather than a generated
+  // one — otherwise the active org reference dangles.
+  const organizationById = (id: string): Record<string, unknown> | null => {
+    const org = (db.organization as Array<{ id?: string }>).find(
+      (row) => row.id === id
+    );
+    return (org as Record<string, unknown> | undefined) ?? null;
+  };
+
   const signUp = async (input: SignUpInput): Promise<SignUpOutcome> => {
     const response = await post(authority, "/sign-up/email", {
       email: input.email,
@@ -300,6 +311,33 @@ const createAuthorityContext = () => {
     return await toSurface(response);
   };
 
+  // Drive the REAL `/change-password` route. Authenticated with the post-verify
+  // session bearer (the same token the worker forwards) and carrying
+  // { currentPassword, newPassword }; HIBP-screened on the newPassword field and
+  // NIST length-bounded, exactly like sign-up and reset. Mirrors the resetPassword
+  // driver minus the token-in-body (the bearer identifies the account instead).
+  const changePassword = async (input: {
+    currentPassword: string;
+    newPassword: string;
+    sessionToken: string;
+  }): Promise<SurfaceResponse> => {
+    const response = await authority.handler(
+      new Request(`${ORIGIN}/api/auth/change-password`, {
+        body: JSON.stringify({
+          currentPassword: input.currentPassword,
+          newPassword: input.newPassword,
+        }),
+        headers: {
+          authorization: `Bearer ${input.sessionToken}`,
+          "content-type": "application/json",
+          origin: ORIGIN,
+        },
+        method: "POST",
+      })
+    );
+    return await toSurface(response);
+  };
+
   // Resolve the session the bearer session-token belongs to (the projected
   // get-session body carries `activeOrganizationId`).
   const getSession = async (
@@ -335,8 +373,10 @@ const createAuthorityContext = () => {
   return {
     auditActions: () => audits.slice(),
     authority,
+    changePassword,
     db,
     getSession,
+    organizationById,
     requestPasswordReset,
     resetPassword,
     sentEmails: () => emails.slice(),
@@ -356,8 +396,10 @@ export const createTestAuthority = () => {
   const ctx = createAuthorityContext();
   return {
     auditActions: ctx.auditActions,
+    changePassword: ctx.changePassword,
     getSession: ctx.getSession,
     options: ctx.authority.options,
+    organizationById: ctx.organizationById,
     requestPasswordReset: ctx.requestPasswordReset,
     resetPassword: ctx.resetPassword,
     sentEmails: ctx.sentEmails,
