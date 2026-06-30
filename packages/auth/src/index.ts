@@ -138,6 +138,11 @@ export const projectSessionFields = ({
   locale: str(user.locale) || LOCALE_DEFAULT,
   given_name: str(user.given_name),
   family_name: str(user.family_name),
+  // The forced-password-change flag rides through the projection alongside the
+  // identity fields, so the gate middleware reads a real session value (never
+  // the dropped-additionalField `undefined`). Coerced to a strict boolean — an
+  // absent flag is "not required".
+  requirePasswordChange: user.requirePasswordChange === true,
 });
 
 // The getSession projection wired into the customSession plugin. better-auth's
@@ -208,11 +213,26 @@ export const documentsPerimeterKey = (session: {
 
 const additionalFields: Record<
   string,
-  { type: "string"; required: boolean; defaultValue?: string }
+  {
+    type: "boolean" | "string";
+    required: boolean;
+    defaultValue?: boolean | string;
+  }
 > = {
   locale: { type: "string", required: false, defaultValue: LOCALE_DEFAULT },
   given_name: { type: "string", required: true },
   family_name: { type: "string", required: true },
+  // Story 2.6's forced-password-change flag. A rotation-required account is
+  // blocked from every op except change-password; the gate middleware reads this
+  // off the session. better-auth does not surface additionalFields through
+  // getSession by default, so it is ALSO folded into projectSessionFields above —
+  // without both, the middleware reads `undefined` and the non-dismissable gate
+  // never mounts. Optional + defaulting false so existing rows read "not required".
+  requirePasswordChange: {
+    type: "boolean",
+    required: false,
+    defaultValue: false,
+  },
 };
 
 // Guard against drift: every field in the canonical db shape must be exposed.

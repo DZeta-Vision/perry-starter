@@ -14,7 +14,6 @@ const CREATE_ACCOUNT_RE = /create account/i;
 const WELCOME_BACK_RE = /welcome back/i;
 const NAME_RE = /name/i;
 const EMAIL_RE = /email/i;
-const PASSWORD_RE = /password/i;
 const SIGN_UP_RE = /sign up/i;
 const SIGN_IN_RE = /sign in/i;
 
@@ -26,7 +25,10 @@ describe("the placeholder auth forms render standalone without a Field-context e
     ).toBeInTheDocument();
     expect(screen.getByLabelText(NAME_RE)).toBeInTheDocument();
     expect(screen.getByLabelText(EMAIL_RE)).toBeInTheDocument();
-    expect(screen.getByLabelText(PASSWORD_RE)).toBeInTheDocument();
+    // The promoted forms add a reveal toggle whose accessible name ("Show
+    // password") also matches /password/i, so query the field by its exact label
+    // to target the input (not the toggle).
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: SIGN_UP_RE })
     ).toBeInTheDocument();
@@ -38,7 +40,10 @@ describe("the placeholder auth forms render standalone without a Field-context e
       screen.getByRole("heading", { name: WELCOME_BACK_RE })
     ).toBeInTheDocument();
     expect(screen.getByLabelText(EMAIL_RE)).toBeInTheDocument();
-    expect(screen.getByLabelText(PASSWORD_RE)).toBeInTheDocument();
+    // The promoted forms add a reveal toggle whose accessible name ("Show
+    // password") also matches /password/i, so query the field by its exact label
+    // to target the input (not the toggle).
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: SIGN_IN_RE })
     ).toBeInTheDocument();
