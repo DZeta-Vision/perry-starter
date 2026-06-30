@@ -15,7 +15,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-const SEALED_TABLES = new Set(["user", "document_delta"]);
+const SEALED_TABLES = new Set([
+  "user",
+  "document_delta",
+  "document_projection",
+]);
 const AUDIT_TABLE = "audit_log";
 
 const TABLE_RE =
