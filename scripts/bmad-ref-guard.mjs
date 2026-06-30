@@ -41,6 +41,13 @@ const BMAD_PATTERNS = [
   { name: "acceptance-criterion", re: /\bAC\d+\b/ },
 ];
 
+// Tests must be named for the behavior they assert, not a BMAD story key. A
+// trailing `-<epic>-<story>` segment before the test suffix (e.g.
+// `rbac-deny-on-both-legs-2-3.acceptance.test.ts`) is a story-key reference.
+// One/two-digit epic+story only, so a date suffix like `-2024-01` never matches.
+const STORY_KEY_FILENAME =
+  /[-_]\d{1,2}-\d{1,2}\.(?:acceptance\.)?(?:test|spec)\.ts$/i;
+
 // This guard's own tooling necessarily CONTAINS the banned patterns (the regexes
 // above, plus the mutation twin's known-bad fixtures). Exempt EXACTLY this
 // family and nothing else — the whole product surface (apps/ + packages/ + the
@@ -129,9 +136,13 @@ const main = () => {
   );
 
   const findings = [];
+  const filenameFindings = [];
   for (const file of files) {
     for (const hit of scanFile(file.abs)) {
       findings.push({ rel: file.rel, ...hit });
+    }
+    if (STORY_KEY_FILENAME.test(file.rel)) {
+      filenameFindings.push(file.rel);
     }
   }
 
@@ -147,24 +158,37 @@ const main = () => {
     return;
   }
 
-  if (findings.length > 0) {
-    process.stderr.write(
-      `\nbmad-ref-guard: FAILED — ${findings.length} BMAD reference(s) in committed code:\n`
-    );
-    for (const finding of findings) {
+  if (findings.length > 0 || filenameFindings.length > 0) {
+    if (findings.length > 0) {
       process.stderr.write(
-        `  ${finding.rel}:${finding.line}  ${finding.match} (${finding.pattern})  ${finding.text}\n`
+        `\nbmad-ref-guard: FAILED — ${findings.length} BMAD reference(s) in committed code:\n`
+      );
+      for (const finding of findings) {
+        process.stderr.write(
+          `  ${finding.rel}:${finding.line}  ${finding.match} (${finding.pattern})  ${finding.text}\n`
+        );
+      }
+      process.stderr.write(
+        "\nCommitted code must be BMAD-agnostic. Rewrite the comment to state the\nfact without the planning id (it points into gitignored dirs).\n"
       );
     }
-    process.stderr.write(
-      "\nCommitted code must be BMAD-agnostic. Rewrite the comment to state the\nfact without the planning id (it points into gitignored dirs).\n"
-    );
+    if (filenameFindings.length > 0) {
+      process.stderr.write(
+        `\nbmad-ref-guard: FAILED — ${filenameFindings.length} test file(s) named after a BMAD story key:\n`
+      );
+      for (const rel of filenameFindings) {
+        process.stderr.write(`  ${rel}\n`);
+      }
+      process.stderr.write(
+        "\nName tests for the behavior they assert, not a story/AC id — drop the\ntrailing -<epic>-<story> from the filename.\n"
+      );
+    }
     process.exit(1);
     return;
   }
 
   process.stdout.write(
-    `bmad-ref-guard: PASSED — 0 BMAD references across ${files.length} committed code file(s).\n`
+    `bmad-ref-guard: PASSED — 0 BMAD references and 0 story-key filenames across ${files.length} committed code file(s).\n`
   );
 };
 

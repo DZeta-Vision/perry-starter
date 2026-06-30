@@ -43,6 +43,7 @@ const withTree = (run: (dir: string) => void) => {
 };
 
 const AD_21_REF = /AD-21/;
+const STORY_KEY_STDERR = /story key/;
 
 describe("the BMAD-reference guard genuinely reddens on planted ids", () => {
   test("a product file referencing decision + requirement + story ids is caught", () => {
@@ -84,6 +85,26 @@ describe("the BMAD-reference guard genuinely reddens on planted ids", () => {
     }
   });
 
+  test("a test file named after a story key is flagged even with clean content", () => {
+    withTree((dir) => {
+      const file = join(
+        dir,
+        "packages",
+        "x",
+        "test",
+        "rbac-thing-2-3.acceptance.test.ts"
+      );
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(
+        file,
+        "// behavior-only comment, no planning ids\nexport const ok = 1;\n"
+      );
+      const result = runGuard(["--root", dir]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(STORY_KEY_STDERR);
+    });
+  });
+
   test("a genuinely clean file is NOT flagged (not always-red)", () => {
     withTree((dir) => {
       const file = join(dir, "ok.ts");
@@ -91,6 +112,14 @@ describe("the BMAD-reference guard genuinely reddens on planted ids", () => {
         file,
         "// the cloud gatekeeper resolves the session and mints the token\nexport const ok = true;\n"
       );
+      expect(runGuard(["--root", dir]).code).toBe(0);
+    });
+  });
+
+  test("a behavior-named test file (no story key) is NOT flagged", () => {
+    withTree((dir) => {
+      const file = join(dir, "rbac-thing.acceptance.test.ts");
+      writeFileSync(file, "// clean behavior name\nexport const ok = 2;\n");
       expect(runGuard(["--root", dir]).code).toBe(0);
     });
   });
