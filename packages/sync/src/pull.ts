@@ -77,6 +77,11 @@ const toEnvelope = (row: Record<string, unknown>): DeltaEnvelope =>
 // strictly greater than the supplied cursor, ordered ascending and range-backed
 // by the (scope_user_id, cursor) composite index — NO START/OFFSET. An empty
 // result is the explicit caught-up end-state.
+//
+// `scopeUserId` is the SERVER-DERIVED enforced scope (threaded in as data by the
+// forwarder, never a client-asserted value); it is the read leg of the
+// cross-scope perimeter, so the WHERE filter can only ever return the session
+// owner's own deltas.
 export const pullSinceCursor = async (
   scopeUserId: string,
   sinceCursor: number,

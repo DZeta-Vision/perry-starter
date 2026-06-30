@@ -172,6 +172,7 @@ test("an over-limit batch is rejected whole and ingests zero rows (no partial am
       pushDeltaBatch(overLimit, {
         transport: transportFor(sql, sidecar.url),
         flushVerdict: "flush",
+        enforcedScopeUserId: scope,
         collection: COLLECTION,
       })
     ).rejects.toThrow(BatchTooLargeError);
@@ -194,6 +195,7 @@ test("a batch exactly at the bounded limit is accepted and every id is acked", a
     const result = await pushDeltaBatch(atLimit, {
       transport: transportFor(sql, sidecar.url),
       flushVerdict: "flush",
+      enforcedScopeUserId: scope,
       collection: COLLECTION,
     });
 

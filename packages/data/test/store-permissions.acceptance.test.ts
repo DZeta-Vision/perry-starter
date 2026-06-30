@@ -17,9 +17,15 @@ const SCHEMA_DIR = join(process.cwd(), "packages", "db", "database", "schema");
 
 // Tables intentionally sealed to record-access sessions (PERMISSIONS NONE): the
 // `user` credential table (no scoped session may read another user's email /
-// argon2 hash) and the `document_delta` delta-log (cross-scope perimeter
-// enforced server-side later). Every OTHER user-data table must scope by $auth.
-const SEALED_TABLES = new Set(["user", "document_delta"]);
+// argon2 hash), the `document_delta` delta-log, and the `document_projection`
+// read-model (both delta-data copies whose cross-scope perimeter is enforced
+// server-side by the server-derived scope). Every OTHER user-data table must
+// scope by $auth.
+const SEALED_TABLES = new Set([
+  "user",
+  "document_delta",
+  "document_projection",
+]);
 
 // Top-level regex literals (Biome: never build regex inside loops).
 const DEFINE_TABLE_RE =

@@ -62,11 +62,34 @@ export interface PushResult {
 export interface PushDeps {
   // The collection whose per-(collection,scope) cursor sequence mints cursors.
   readonly collection: string;
+  // The SERVER-DERIVED scope every row in this batch is stamped under — REQUIRED.
+  // The client-supplied per-delta scope_user_id is NEVER used for placement, so a
+  // forged scope in the request body can never land a row under another owner.
+  // This is the write leg of the cross-scope perimeter, and it is fail-CLOSED:
+  // there is no code path that writes a delta under a client-chosen scope. The
+  // caller (the cloud forwarder, derived from the session, never client-asserted)
+  // MUST supply it; an absent/empty value is rejected, never silently defaulted.
+  // It is threaded down as data, so this package keeps no build edge to the auth
+  // tier.
+  readonly enforcedScopeUserId: string;
   // The injected flush authority verdict; the push routes through it and never
   // re-derives the revocation decision.
   readonly flushVerdict: FlushVerdict;
   // The opaque forwarder transport (the single-forwarder cloud seam).
   readonly transport: DeltaLogTransport;
+}
+
+// Thrown when a push reaches the delta-log without a server-derived enforced
+// scope. The perimeter is fail-CLOSED: rather than fall back to the
+// client-supplied scope (which a forged request controls), the push refuses
+// outright, so a caller that forgets to inject the derived scope writes nothing.
+export class MissingEnforcedScopeError extends Error {
+  constructor() {
+    super(
+      "push requires a server-derived enforced scope; refusing to stamp a client-supplied scope"
+    );
+    this.name = "MissingEnforcedScopeError";
+  }
 }
 
 // Thrown when a batch exceeds the bounded limit. The push rejects the batch
@@ -132,7 +155,8 @@ interface BatchedPush {
 // payload is inlined VERBATIM and never decoded.
 const buildBatch = (
   deltas: readonly UnackedDelta[],
-  collection: string
+  collection: string,
+  enforcedScopeUserId: string
 ): BatchedPush => {
   const vars: Record<string, string> = {};
   const defineStatements: string[] = [];
@@ -141,12 +165,17 @@ const buildBatch = (
 
   for (const raw of deltas) {
     const delta = unackedDeltaSchema.parse(raw);
-    let scopeIndex = scopeVarIndex.get(delta.scope_user_id);
+    // Every row is stamped with the SERVER-DERIVED enforced scope — NEVER the
+    // client-supplied delta.scope_user_id (validated for shape, but never used
+    // for placement). There is no fallback, so a forged scope cannot widen the
+    // perimeter and one push writes under exactly one scope (one session).
+    const scopeUserId = enforcedScopeUserId;
+    let scopeIndex = scopeVarIndex.get(scopeUserId);
     if (scopeIndex === undefined) {
       scopeIndex = scopeVarIndex.size;
-      scopeVarIndex.set(delta.scope_user_id, scopeIndex);
-      const sequenceName = cursorSequenceName(collection, delta.scope_user_id);
-      vars[`scope_${scopeIndex}`] = delta.scope_user_id;
+      scopeVarIndex.set(scopeUserId, scopeIndex);
+      const sequenceName = cursorSequenceName(collection, scopeUserId);
+      vars[`scope_${scopeIndex}`] = scopeUserId;
       vars[`seq_${scopeIndex}`] = sequenceName;
       defineStatements.push(
         `DEFINE SEQUENCE IF NOT EXISTS ${quoteSequenceIdent(sequenceName)} BATCH ${SEQUENCE_BATCH} START ${SEQUENCE_START};`
@@ -204,6 +233,13 @@ export const pushDeltaBatch = async (
   deltas: readonly UnackedDelta[],
   deps: PushDeps
 ): Promise<PushResult> => {
+  // Fail-CLOSED perimeter precondition: the server-derived scope is mandatory.
+  // Without it the push refuses outright rather than fall back to the
+  // client-supplied scope, so no forged/missing-scope request can write a row.
+  if (!deps.enforcedScopeUserId) {
+    throw new MissingEnforcedScopeError();
+  }
+
   // Reject an over-limit batch WHOLE, before any egress — the log can never be
   // left in an ambiguous partial-ingestion state.
   if (deltas.length > MAX_PUSH_BATCH) {
@@ -224,7 +260,11 @@ export const pushDeltaBatch = async (
     return { acks: [], outcome: "flushed" };
   }
 
-  const { query, vars } = buildBatch(deltas, deps.collection);
+  const { query, vars } = buildBatch(
+    deltas,
+    deps.collection,
+    deps.enforcedScopeUserId
+  );
   const rows = await deps.transport.run(query, vars);
   return { acks: extractAcks(rows), outcome: "flushed" };
 };

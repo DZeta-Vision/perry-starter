@@ -82,6 +82,7 @@ test("the push reaches the forwarder transport and carries the base64 payload ve
   await pushDeltaBatch([makeDelta("01ARZ3NDEKTSV4RRFFQ69G5FAV")], {
     transport: spy.transport,
     flushVerdict: "flush",
+    enforcedScopeUserId: SCOPE,
     collection: COLLECTION,
   });
 
@@ -101,6 +102,7 @@ test("an over-limit batch never reaches the forwarder (the bound is checked befo
     pushDeltaBatch(overLimit, {
       transport: spy.transport,
       flushVerdict: "flush",
+      enforcedScopeUserId: SCOPE,
       collection: COLLECTION,
     })
   ).rejects.toThrow(BatchTooLargeError);
@@ -123,6 +125,7 @@ test("a session revoked while offline routes to quarantine via the flush authori
     {
       transport: spy.transport,
       flushVerdict: verdict,
+      enforcedScopeUserId: SCOPE,
       collection: COLLECTION,
     }
   );
@@ -145,6 +148,7 @@ test("an offline / un-revalidated verdict holds — the push never flushes the q
     {
       transport: spy.transport,
       flushVerdict: verdict,
+      enforcedScopeUserId: SCOPE,
       collection: COLLECTION,
     }
   );
@@ -176,12 +180,14 @@ test("a same-subject re-flush carries the identical ULID dedup keys so the serve
   await pushDeltaBatch(deltas, {
     transport: firstSpy.transport,
     flushVerdict: verdict,
+    enforcedScopeUserId: SCOPE,
     collection: COLLECTION,
   });
   const secondSpy = makeSpy();
   await pushDeltaBatch(deltas, {
     transport: secondSpy.transport,
     flushVerdict: verdict,
+    enforcedScopeUserId: SCOPE,
     collection: COLLECTION,
   });
 

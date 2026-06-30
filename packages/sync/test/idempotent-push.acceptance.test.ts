@@ -177,6 +177,7 @@ test("a batched push assigns a server cursor to each accepted delta id", async (
     const result = await pushDeltaBatch(deltas, {
       transport: transportFor(sql, sidecar.url),
       flushVerdict: "flush",
+      enforcedScopeUserId: scope,
       collection: COLLECTION,
     });
 
@@ -209,12 +210,14 @@ test("replaying an already-ingested batch is a no-op — no duplicate rows, no e
     const first = await pushDeltaBatch(deltas, {
       transport,
       flushVerdict: "flush",
+      enforcedScopeUserId: scope,
       collection: COLLECTION,
     });
     // The identical batch, replayed: no error, no second row, same cursors.
     const replay = await pushDeltaBatch(deltas, {
       transport,
       flushVerdict: "flush",
+      enforcedScopeUserId: scope,
       collection: COLLECTION,
     });
 
@@ -245,6 +248,7 @@ test("a replay after a partial prior attempt converges to one row set and the sa
     const partial = await pushDeltaBatch([deltas[0]], {
       transport,
       flushVerdict: "flush",
+      enforcedScopeUserId: scope,
       collection: COLLECTION,
     });
     const firstCursor = partial.acks[0]?.cursor;
@@ -253,6 +257,7 @@ test("a replay after a partial prior attempt converges to one row set and the sa
     const full = await pushDeltaBatch(deltas, {
       transport,
       flushVerdict: "flush",
+      enforcedScopeUserId: scope,
       collection: COLLECTION,
     });
 
@@ -278,11 +283,21 @@ test("a second batch of new deltas continues the (collection,scope) cursor seque
 
     const batchA = await pushDeltaBatch(
       Array.from({ length: BATCH_SIZE }, () => makeDelta(mintUlid(), scope)),
-      { transport, flushVerdict: "flush", collection: COLLECTION }
+      {
+        transport,
+        flushVerdict: "flush",
+        collection: COLLECTION,
+        enforcedScopeUserId: scope,
+      }
     );
     const batchB = await pushDeltaBatch(
       Array.from({ length: BATCH_SIZE }, () => makeDelta(mintUlid(), scope)),
-      { transport, flushVerdict: "flush", collection: COLLECTION }
+      {
+        transport,
+        flushVerdict: "flush",
+        collection: COLLECTION,
+        enforcedScopeUserId: scope,
+      }
     );
 
     const maxA = Math.max(...batchA.acks.map((a) => a.cursor));

@@ -93,6 +93,28 @@ DEFINE INDEX idx_document_delta_op_id ON document_delta FIELDS op_id UNIQUE;
 -- OFFSET/START deep-page and never a full table scan.
 DEFINE INDEX idx_document_delta_scope_cursor ON document_delta FIELDS scope_user_id, cursor;
 
+-- The materialized read-model projection — the THIRD copy of delta data the
+-- cross-scope isolation perimeter must cover, alongside the cloud log and the
+-- local store. Sealed PERMISSIONS NONE exactly like the delta-log: a record-access
+-- session reads zero rows directly (defense in depth), and the only perimeter over
+-- it is the server-derived scope_user_id the privileged forwarder constrains on. A
+-- single owning writer (the browser projection writer) owns every column including
+-- the model-tagged embedding (so one index never mixes embedding spaces);
+-- updated_cursor is the server-assigned integer the read-model advances on.
+DEFINE TABLE document_projection SCHEMAFULL PERMISSIONS NONE;
+
+DEFINE FIELD scope_user_id ON document_projection TYPE string;
+DEFINE FIELD doc_id ON document_projection TYPE string;
+DEFINE FIELD title ON document_projection TYPE string DEFAULT '';
+DEFINE FIELD body_preview ON document_projection TYPE string DEFAULT '';
+DEFINE FIELD embedding ON document_projection TYPE option<array<float>>;
+DEFINE FIELD embedding_model ON document_projection TYPE string DEFAULT 'unset';
+DEFINE FIELD updated_cursor ON document_projection TYPE int;
+
+-- One projection row per (scope, document); the server-derived scope_user_id is
+-- the perimeter key and range-backs the scoped read of the read-model.
+DEFINE INDEX idx_document_projection_scope_doc ON document_projection FIELDS scope_user_id, doc_id UNIQUE;
+
 -- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
 -- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim
 -- $auth.role split on ',', never an org-structural role). NO role — not even
