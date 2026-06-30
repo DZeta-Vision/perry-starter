@@ -63,13 +63,35 @@ DEFINE FIELD updated_at ON documents TYPE datetime VALUE time::now();
 
 -- The delta-log table is sealed: it grants no access to record-access sessions
 -- at all. The cross-scope isolation perimeter over this table is enforced
--- server-side later; here it is only shaped as fully denied.
+-- server-side later; here it is only shaped as fully denied. It is anchored to
+-- the document (doc_id), append-only, and dedup-safe on the client-minted op-id.
 DEFINE TABLE document_delta SCHEMAFULL PERMISSIONS NONE;
 
 DEFINE FIELD scope_user_id ON document_delta TYPE string;
 DEFINE FIELD doc_id ON document_delta TYPE string;
-DEFINE FIELD cursor ON document_delta TYPE int;
+-- The client-minted ULID op-id, carried as a field and pinned UNIQUE below so a
+-- replayed op converges to a single row (idempotent dedup at the table layer).
+-- The record id is also the op-id (document_delta:<ulid>), so an UPSERT replay
+-- updates in place; the UNIQUE index additionally forbids a different record id
+-- from reusing the same op-id.
+DEFINE FIELD op_id ON document_delta TYPE string;
+-- The document schema version travels with every delta so a reader can detect an
+-- envelope minted under a drifted/incompatible document shape.
+DEFINE FIELD doc_schema_version ON document_delta TYPE int;
+-- The server-assigned monotonic per-(collection, scope) cursor — transport and
+-- keyset ordering only, never a client clock and never the ULID. OPTIONAL on the
+-- row because it does not exist until the server mints it from the named sequence
+-- at ingest; an as-yet-unminted delta carries no cursor.
+DEFINE FIELD cursor ON document_delta TYPE option<int>;
 DEFINE FIELD payload ON document_delta TYPE string;
+
+-- Idempotent-replay dedup: a duplicate op-id can never create a second row.
+DEFINE INDEX idx_document_delta_op_id ON document_delta FIELDS op_id UNIQUE;
+-- The trailing (scope_user_id, cursor) composite range index range-backs the
+-- since-cursor keyset pull (WHERE scope_user_id = $s AND cursor > $since ORDER BY
+-- cursor ASC) at a cost proportional to the number of new deltas — never an
+-- OFFSET/START deep-page and never a full table scan.
+DEFINE INDEX idx_document_delta_scope_cursor ON document_delta FIELDS scope_user_id, cursor;
 
 -- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
 -- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim

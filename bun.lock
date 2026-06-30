@@ -260,6 +260,20 @@
         "typescript": "catalog:",
       },
     },
+    "packages/sync": {
+      "name": "@perry-starter/sync",
+      "version": "0.0.0",
+      "dependencies": {
+        "@perry-starter/api": "workspace:*",
+        "@perry-starter/db": "workspace:*",
+      },
+      "devDependencies": {
+        "@perry-starter/config": "workspace:*",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
   },
   "overrides": {
     "kysely": "0.28.17",
@@ -757,6 +771,8 @@
     "@perry-starter/env": ["@perry-starter/env@workspace:packages/env"],
 
     "@perry-starter/infra": ["@perry-starter/infra@workspace:packages/infra"],
+
+    "@perry-starter/sync": ["@perry-starter/sync@workspace:packages/sync"],
 
     "@perry-starter/worker": ["@perry-starter/worker@workspace:apps/worker"],
 
