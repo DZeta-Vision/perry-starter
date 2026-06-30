@@ -1,7 +1,7 @@
-import { decideFlush } from "./flush-gate";
-
-// The thin offline write queue (outbox) plus the first-reconnect revalidation
-// boundary, which delegates to the single flush-gate authority.
+// The thin offline write queue (outbox). The first-reconnect "revalidate before
+// any flush" decision is owned solely by the single flush-gate authority
+// (`decideFlush` in ./flush-gate); this module carries no revocation branch of
+// its own.
 //
 // Unflushed offline work lives here as a queue of deltas. Each item stamps its
 // owning subject (`scope_user_id`) AT ENQUEUE and carries a client-minted,
@@ -91,27 +91,3 @@ export const createOfflineWriteQueue = (): OfflineWriteQueue => {
     quarantine: () => ({ held: items.length, status: "quarantined" }),
   };
 };
-
-// The first-reconnect "revalidate before any queued flush" boundary. It owns no
-// decision of its own: the revoked/offline/valid outcome is decided by the
-// single flush-gate authority (decideFlush), and this boundary only adapts that
-// 3-valued decision to the queue's allow/hold contract. A flush is released only
-// when the gate would flush; every other outcome (offline, revoked → quarantine)
-// holds. The decision is never re-derived here.
-export type RevocationDecision = "allow" | "hold";
-
-export interface RevocationCheckInput {
-  readonly online: boolean;
-  readonly revocationOutcome?: "revoked" | "valid";
-}
-
-export interface RevocationDiscoveryGate {
-  readonly revalidate: (input: RevocationCheckInput) => RevocationDecision;
-}
-
-export const createRevocationDiscoveryGate = (): RevocationDiscoveryGate => ({
-  revalidate: ({ online, revocationOutcome }) =>
-    decideFlush({ online, revalidated: true, revocationOutcome }) === "flush"
-      ? "allow"
-      : "hold",
-});

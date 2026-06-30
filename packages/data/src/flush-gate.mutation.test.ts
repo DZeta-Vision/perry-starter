@@ -4,9 +4,6 @@ import { describe, expect, test } from "vitest";
 // replicated here and run against deliberately-wrong, self-contained inline
 // gates (no import of the real module), proving each invariant goes RED on a
 // bad gate and GREEN on a correct control.
-//
-// RED PHASE: every test is `test.skip` to match the gate's red phase; the
-// fixtures are self-contained so collection never throws.
 
 const FIVE_MIN_MS = 300_000;
 const TEN_MIN_MS = 600_000;
@@ -84,11 +81,50 @@ const revalidatedOutcomeViolations = (m: FlushGateModule): string[] => {
   return violations;
 };
 
+// Fail closed on the absence of a verdict: a revalidated session with NO
+// affirmative outcome yet must HOLD, never flush.
+const failClosedOnUndefinedViolations = (m: FlushGateModule): string[] => {
+  const violations: string[] = [];
+  if (
+    m.decideFlush({
+      online: true,
+      revalidated: true,
+      sinceReconnectMs: 1000,
+    }) !== "hold"
+  ) {
+    violations.push(
+      "a revalidated session with no affirmative outcome must hold, not flush"
+    );
+  }
+  return violations;
+};
+
 // --- Controls + deliberately-wrong fixtures ----------------------------------
 
 const correct: FlushGateModule = {
   REVOCATION_SLA_MS: FIVE_MIN_MS,
   REVOCATION_SLA_MAX_MS: TEN_MIN_MS,
+  decideFlush: ({ online, revalidated, revocationOutcome }) => {
+    if (!online) {
+      return "hold";
+    }
+    if (!revalidated) {
+      return "hold";
+    }
+    if (revocationOutcome === "revoked") {
+      return "quarantine";
+    }
+    if (revocationOutcome === "valid") {
+      return "flush";
+    }
+    return "hold";
+  },
+};
+
+// Reproduces today's fail-OPEN bug: releases a flush on the mere absence of a
+// verdict (revoked → quarantine; everything else, including no outcome → flush).
+const flushesOnUndefined: FlushGateModule = {
+  ...correct,
   decideFlush: ({ online, revalidated, revocationOutcome }) => {
     if (!online) {
       return "hold";
@@ -146,5 +182,12 @@ describe("the flush-gate twin rejects gates that flush unsafely", () => {
     expect(revalidatedOutcomeViolations(flushesRevoked).length).toBeGreaterThan(
       0
     );
+  });
+
+  test("a gate that flushes on the absence of a verdict reddens fail-closed; the correct control holds", () => {
+    expect(failClosedOnUndefinedViolations(correct)).toEqual([]);
+    expect(
+      failClosedOnUndefinedViolations(flushesOnUndefined).length
+    ).toBeGreaterThan(0);
   });
 });

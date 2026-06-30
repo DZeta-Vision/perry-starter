@@ -41,20 +41,14 @@ interface EvaluateInput {
   readonly refreshOutcome?: "ok" | "failed";
 }
 
-interface FlushInput {
-  readonly online: boolean;
-  readonly revocationOutcome?: "valid" | "revoked";
-  readonly state: SessionState;
-}
-
 // The reducer surface the gate drives.
 interface SessionModule {
   readonly ABSOLUTE_SESSION_MS: number;
   readonly canEnqueue: (state: SessionState) => boolean;
-  readonly canFlush: (input: FlushInput) => "hold" | boolean;
   readonly evaluateSession: (input: EvaluateInput) => SessionState;
   readonly guardDataAccess: (state: SessionState) => "allow" | "block";
   readonly IDLE_TIMEOUT_MS: number;
+  readonly mustForceRefresh: (input: EvaluateInput) => boolean;
   readonly SKEW_TOLERANCE_MS: number;
 }
 
@@ -277,23 +271,42 @@ const ceilingViolations = (m: SessionModule, iat: number): string[] => {
   return violations;
 };
 
-// The flush-gate stub never permits a flush while offline, and HOLDS (does not
-// flush) when the injected revocation outcome is `revoked`.
-const canFlushViolations = (m: SessionModule): string[] => {
+// Past the absolute ceiling an online reconnect with no refresh result yet MUST
+// force a token refresh: the cached token is beyond its server-issued lifetime.
+// Below the ceiling, while OFFLINE (never-degrade), or once a refresh result is
+// already in hand, no forced refresh is required.
+const mustForceRefreshViolations = (
+  m: SessionModule,
+  claims: SessionClaims
+): string[] => {
   const violations: string[] = [];
-  if (m.canFlush({ state: "LOCAL_GRACE", online: false }) !== false) {
-    violations.push("canFlush must be false while offline");
+  const ceiling = claims.iat + m.ABSOLUTE_SESSION_MS;
+  if (!m.mustForceRefresh({ claims, now: ceiling, online: true })) {
+    violations.push(
+      "past the ceiling an online client with no refresh result must force a refresh"
+    );
   }
-  if (m.canFlush({ state: "AUTHENTICATED", online: false }) !== false) {
-    violations.push("canFlush must be false while offline (any state)");
-  }
-  const revoked = m.canFlush({
-    state: "AUTHENTICATED",
+  const belowCeiling = m.mustForceRefresh({
+    claims,
+    now: claims.iat + TOKEN_TTL_MS / 2,
     online: true,
-    revocationOutcome: "revoked",
   });
-  if (revoked !== "hold") {
-    violations.push("canFlush must HOLD when revocation outcome is revoked");
+  if (belowCeiling) {
+    violations.push("below the ceiling no forced refresh is required");
+  }
+  if (m.mustForceRefresh({ claims, now: ceiling + 1, online: false })) {
+    violations.push("an offline client must never be forced to refresh");
+  }
+  const refreshed = m.mustForceRefresh({
+    claims,
+    now: ceiling + 1,
+    online: true,
+    refreshOutcome: "ok",
+  });
+  if (refreshed) {
+    violations.push(
+      "once a refresh result is in hand no further forced refresh is required"
+    );
   }
   return violations;
 };
@@ -393,9 +406,9 @@ describe("the LOCAL_GRACE reducer holds the never-degrade + bounds invariants", 
     expect(ceilingViolations(m, IAT)).toEqual([]);
   });
 
-  test("canFlush is false while offline and HOLDS on a revoked outcome", async () => {
+  test("past the ceiling an online reconnect with no refresh result must force a token refresh; below the ceiling, offline, or with a result in hand it must not", async () => {
     const m = await loadModule();
-    expect(canFlushViolations(m)).toEqual([]);
+    expect(mustForceRefreshViolations(m, claimsAt(IAT))).toEqual([]);
   });
 
   test("the pure reducer source references no Date.now / performance.now / setTimeout / setInterval / navigator.onLine", () => {

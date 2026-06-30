@@ -250,7 +250,14 @@ for (const key of Object.keys(userAdditionalFields.shape)) {
 // `context.context.adapter`). Typed loosely so this module never couples to
 // better-auth's internal adapter generics.
 interface AdapterCreate {
-  create: (args: { data: unknown; model: string }) => Promise<unknown>;
+  create: (args: {
+    data: unknown;
+    model: string;
+    // better-auth's adapter factory STRIPS a caller-supplied `id` (and warns)
+    // unless `forceAllowId` is set, generating its own instead. The personal-org
+    // provisioning needs its deterministic id honored, so it opts in per-create.
+    forceAllowId?: boolean;
+  }) => Promise<unknown>;
 }
 
 // The minimal adapter surface the prior-reset-token invalidation deletes
@@ -286,7 +293,15 @@ const provisionOnUserCreate = async (
         await adapter.create({ data: membership, model: "member" });
       },
       createOrganization: async (organization) => {
-        await adapter.create({ data: organization, model: "organization" });
+        // Honor the deterministic personalOrgIdFor id (forceAllowId) so the
+        // persisted row matches the activeOrganizationId the session derives —
+        // without it better-auth discards the id and the active org dangles. The
+        // member-row create below carries no id and is left untouched.
+        await adapter.create({
+          data: organization,
+          forceAllowId: true,
+          model: "organization",
+        });
       },
     }
   );

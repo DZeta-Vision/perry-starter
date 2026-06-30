@@ -47,15 +47,6 @@ export interface EvaluateSessionInput {
   readonly refreshOutcome?: RefreshOutcome;
 }
 
-// A revocation outcome injected by the (separately owned) revalidation path.
-export type RevocationOutcome = "revoked" | "valid";
-
-export interface CanFlushInput {
-  readonly online: boolean;
-  readonly revocationOutcome?: RevocationOutcome;
-  readonly state: SessionState;
-}
-
 // The absolute ceiling is derived purely from the server-issued claim — never a
 // device-clock term — so clock skew can never extend the session past it.
 const ceilingFor = (claims: SessionClaims): number =>
@@ -107,19 +98,15 @@ export const guardDataAccess = (state: SessionState): "allow" | "block" =>
 export const canEnqueue = (state: SessionState): boolean =>
   guardDataAccess(state) === "allow";
 
-// The flush gate for queued offline work. It never permits a flush while
-// offline, and otherwise releases ONLY on an affirmatively-valid revalidation —
-// every other outcome (a revoked outcome, or none yet) HOLDS. It makes no
-// revocation judgement of its own: the authoritative revoked → quarantine
-// decision has a SINGLE owner, the data-tier flush-gate, and this gate defers to
-// it by holding anything not proven valid (which also enforces
-// revalidate-before-flush — an absent outcome never releases).
-export const canFlush = ({
+// Past the absolute ceiling, a reconnect MUST force a token refresh before the
+// session may be trusted: the cached token is beyond its server-issued lifetime,
+// so an online client may not keep operating on it. Offline past-ceiling stays
+// operational (never-degrade); the obligation fires the instant connectivity
+// returns and no refresh result has yet been applied.
+export const mustForceRefresh = ({
+  claims,
+  now,
   online,
-  revocationOutcome,
-}: CanFlushInput): "hold" | boolean => {
-  if (!online) {
-    return false;
-  }
-  return revocationOutcome === "valid" ? true : "hold";
-};
+  refreshOutcome,
+}: EvaluateSessionInput): boolean =>
+  online && refreshOutcome === undefined && now >= ceilingFor(claims);

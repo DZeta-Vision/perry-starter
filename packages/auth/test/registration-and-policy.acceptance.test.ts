@@ -60,6 +60,19 @@ describe("self sign-up creates a member, unverified, with a personal org owner",
     expect(result.orgRole).toBe("owner");
   });
 
+  test("the personal org is persisted under the deterministic id the session derives", async () => {
+    const harness = createTestAuthority();
+    const result = await harness.signUp({
+      email: "persisted-org@example.com",
+      password: VALID_PASSWORD_12,
+    });
+    // The session resolves activeOrganizationId = personalOrgIdFor(userId); the
+    // provisioned org row MUST carry that exact id, or the active org dangles.
+    expect(
+      harness.organizationById(personalOrgIdFor(result.userId ?? ""))
+    ).not.toBeNull();
+  });
+
   test("the org-structural owner role does not overwrite the global member role", async () => {
     const harness = createTestAuthority();
     const result = await harness.signUp({
