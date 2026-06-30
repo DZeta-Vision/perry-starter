@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sync-status": "./src/sync-status.ts",
+    "./sync-status-view": "./src/sync-status-view.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
