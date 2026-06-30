@@ -1,17 +1,17 @@
-// Red-phase ATDD acceptance scaffolds for Story 2.3 — the single-sourced
+// Red-phase ATDD acceptance scaffolds for the single-sourced
 // role->capability matrix and the GLOBAL-vs-org role split.
 //
 // RED PHASE: every test is `test.skip`. The single-sourced matrix
 // (`@perry-starter/auth/rbac`: `ac`, `roles`, `statement`), the PERMISSIONS-
 // generation helper, and the global-role resolver DO NOT EXIST yet (they land
-// with stories 2-1/2-3). All imports of not-yet-existing modules are dynamic,
+// in later auth work). All imports of not-yet-existing modules are dynamic,
 // function-indirected, and INSIDE the skipped bodies; top-level static imports
 // are limited to `vitest`. `vitest run --project node` collects these as
 // skipped (exit 0) — the suite stays green until the dev un-skips at green
 // phase and converts the parity scaffold into the `*.gate.test.ts` + paired
 // `*.mutation.test.ts` twin enforced by `scripts/meta-gate.mjs`.
 //
-// Behavior asserted (names describe the behavior, never an AC/risk id):
+// Behavior asserted (names describe the behavior, never a planning-artifact id):
 //  - both enforcement legs derive from the ONE createAccessControl().statements
 //  - the role is taken from the GLOBAL user.role claim split on ',', never the
 //    org member.role (the canonical mis-split)
@@ -150,7 +150,7 @@ describe("the app-authz tier is the GLOBAL user.role claim, never the org member
       const m = await loadRbac();
       const resolved = m.resolveGlobalRoles({
         user: { role: "admin,member" }, // GLOBAL app-authz claim
-        member: { role: "owner" }, // orthogonal org-structural role (D1)
+        member: { role: "owner" }, // orthogonal org-structural role
       });
       expect([...resolved].sort()).toEqual(["admin", "member"]);
       // The org-structural 'owner' is NOT an app-authz tier and must never leak in.

@@ -38,7 +38,9 @@
     "rename": "node scripts/rename.mjs",
     "remove-reference": "node scripts/remove-reference.mjs",
     "gate:contrast": "node scripts/contrast-gate.mjs",
-    "gate:meta": "node scripts/meta-gate.mjs"
+    "gate:meta": "node scripts/meta-gate.mjs",
+    "gate:bmad-refs": "node scripts/bmad-ref-guard.mjs",
+    "gate:epic-close": "node scripts/epic-close-doc-guard.mjs --epic"
   },
   "dependencies": {
     "@perry-starter/env": "workspace:*",

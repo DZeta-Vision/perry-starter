@@ -7,7 +7,7 @@ config({ path: "../../apps/web/.env" });
 
 const app = await alchemy("perry-starter");
 
-// The AD-23 gatekeeper: the auth-authority / cloud data ingress. better-auth is
+// The cloud gatekeeper: the auth-authority / cloud data ingress. better-auth is
 // the SOLE session/token issuer, and this is the ONLY server unit that reaches
 // cloud SurrealDB — it holds the single runtime (non-DDL) cloud-SurrealDB
 // credential binding. Schema DDL/migration creds are a deploy-only pipeline
@@ -31,7 +31,7 @@ export const gatekeeper = await Worker("gatekeeper", {
 
 export const web = await TanStackStart("web", {
   cwd: "../../apps/web",
-  // The web relay holds NO runtime cloud-SurrealDB credential (AD-23): it reaches
+  // The web relay holds NO runtime cloud-SurrealDB credential: it reaches
   // cloud data THROUGH the gatekeeper worker above, and forwards auth ingress to
   // it. The cloud SURREAL_* credential binding lives ONLY on the gatekeeper.
   bindings: {

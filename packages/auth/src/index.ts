@@ -44,14 +44,14 @@ import {
   verificationEmailSender,
 } from "./verification-email";
 
-// packages/auth is the SOLE authn/authz authority (AD-8). It imports ONLY
+// packages/auth is the SOLE authn/authz authority. It imports ONLY
 // packages/db (canonical identity shapes) and packages/env (the SURREAL_*/
 // BETTER_AUTH_* contract) — never packages/api or packages/infra. The singleton
 // runs ONLY on the apps/worker Cloudflare host; the browser calls it via
 // better-auth/client and the Perry daemon forwards a bearer token + verifies the
 // ES256 JWT offline. No other unit issues sessions or tokens.
 
-// --- The single-sourced RBAC matrix (D3 / AD-9) -----------------------------
+// --- The single-sourced RBAC matrix -----------------------------------------
 
 // THE matrix is built ONCE and the SAME `ac`/`roles` are passed to BOTH
 // organization() and admin() so the in-process leg and the (later) SurrealDB
@@ -99,7 +99,7 @@ export const parseMemberRoles = (roleString: string): string[] =>
     .map((role) => role.trim())
     .filter((role) => role.length > 0);
 
-// --- Session establishment + personal-org bootstrap (D1/D2) -----------------
+// --- Session establishment + personal-org bootstrap -------------------------
 
 // NOTE ON OWNERSHIP: the real personal organization is PROVISIONED at account
 // registration (the user-creation flow, owned elsewhere). This module
@@ -222,7 +222,7 @@ const additionalFields: Record<
   locale: { type: "string", required: false, defaultValue: LOCALE_DEFAULT },
   given_name: { type: "string", required: true },
   family_name: { type: "string", required: true },
-  // Story 2.6's forced-password-change flag. A rotation-required account is
+  // The forced-password-change flag. A rotation-required account is
   // blocked from every op except change-password; the gate middleware reads this
   // off the session. better-auth does not surface additionalFields through
   // getSession by default, so it is ALSO folded into projectSessionFields above —
@@ -244,7 +244,7 @@ for (const key of Object.keys(userAdditionalFields.shape)) {
   }
 }
 
-// --- Registration-time hooks (D1 personal-org provisioning + verification mail) -
+// --- Registration-time hooks (personal-org provisioning + verification mail) -
 
 // The minimal adapter surface the provisioning writes through (the better-auth
 // `context.context.adapter`). Typed loosely so this module never couples to
@@ -262,7 +262,7 @@ interface AdapterDeleteMany {
   }) => Promise<number>;
 }
 
-// D1 personal-org provisioning, wired into `databaseHooks.user.create.after`. This
+// Personal-org provisioning, wired into `databaseHooks.user.create.after`. This
 // is the REAL hook that actually creates the personal organization (+ the owner
 // membership) for every self-registered member, so the session's
 // activeOrganizationId resolves to a real, non-dangling row. Params are `unknown`
@@ -447,7 +447,7 @@ export const buildAuthOptions = (
   // name, error code, or stack leaked, no per-cause divergence.
   onAPIError: { errorURL: GENERIC_OAUTH_ERROR_ROUTE },
   emailAndPassword: {
-    // D5: no usable session token at registration — the token lands at the
+    // No usable session token at registration — the token lands at the
     // post-verification sign-in, never auto-signed-in at sign-up.
     autoSignIn: false,
     enabled: true,
@@ -514,7 +514,7 @@ export const buildAuthOptions = (
     },
     user: {
       create: {
-        // D1: provision the personal organization (+ owner membership) for every
+        // Provision the personal organization (+ owner membership) for every
         // self-registered member so activeOrganizationId is non-dangling.
         after: provisionOnUserCreate,
       },

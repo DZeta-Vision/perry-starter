@@ -1,10 +1,10 @@
-// Auth-scope FR/EN string catalog (the Epic-2 subset).
+// Auth-scope FR/EN string catalog (the initial auth subset).
 //
-// The full Lingui runtime + the live FR string-switch (FR-47) land in Epic 7;
+// The full Lingui runtime + the live FR string-switch land later;
 // this module is the auth-scope keyed subset the auth surfaces need NOW: the
 // generic anti-enumeration error copy, the per-code treatment copy keyed by
 // `auth.error.<CODE>`, and the form labels/placeholders/actions — each in EN and
-// FR. Keys mirror the Lingui `auth.*` namespace so the Epic-7 migration is a
+// FR. Keys mirror the Lingui `auth.*` namespace so the later full-runtime migration is a
 // catalog swap, not a rewrite. Resolution is a pure lookup with an EN fallback.
 //
 // SECURITY: every error message is GENERIC. None confirms or denies that an

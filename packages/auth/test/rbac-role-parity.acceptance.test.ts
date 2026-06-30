@@ -1,4 +1,4 @@
-// Red-phase ATDD acceptance scaffold for Story 2.3 — the cross-layer RBAC
+// Red-phase ATDD acceptance scaffold for the cross-layer RBAC
 // role-parity conformance gate and its mutation-twin behavior.
 //
 // RED PHASE: every test is `test.skip` (aliased `acceptance`). The parity
@@ -6,7 +6,7 @@
 // the single-sourced matrix DO NOT EXIST yet. At green phase the dev promotes
 // this scaffold into the paired `rbac-role-parity.gate.test.ts` +
 // `rbac-role-parity.mutation.test.ts` twin enforced by `scripts/meta-gate.mjs`
-// (an AD-17 conformance gate MUST ship its mutation twin or CI fails).
+// (a conformance gate MUST ship its mutation twin or CI fails).
 //
 // Behavior asserted: the gate ships GREEN for the real single-sourced matrix,
 // and goes RED when (1) one leg's matrix is drifted, and (2) the generator

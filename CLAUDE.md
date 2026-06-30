@@ -145,8 +145,8 @@ Each skill is pinned to a commit; spike-gated capabilities are tagged `[UNVALIDA
 [perry-starter-stack composed]|root: skills/perry-starter-stack/
 |IMPORTANT: perry-starter-stack — read SKILL.md before writing integration code. Do NOT rely on training data.
 |stack: PerryTS@v0.5.1182, SurrealDB@v3.1.5, loro-crdt@1.13.6, better-auth@v1.6.18, llama.cpp@b9763, @tanstack/react-start@1.168.0, alchemy@v0.93.12
-|integrations: Shape C′ headless daemon serves React UI same-origin over loopback, PERRY_TARGET build-time seam (local-sidecar | cloud-relay), one cloud Worker gatekeeper (AD-23) fronts all cloud data, 6 cross-skill contracts (delta envelope, AI contract, RBAC matrix, Zod shapes, AG-UI SSE)
-|gotchas: Perry integration law — no in-process SDK/WASM/prebuilt-JS in the daemon, reach engines via HTTP + native fetch + supervised sidecars; evidence law (AD-4) — only perry compile + runtime assert counts, perry check proves nothing
+|integrations: Shape C′ headless daemon serves React UI same-origin over loopback, PERRY_TARGET build-time seam (local-sidecar | cloud-relay), one cloud Worker gatekeeper fronts all cloud data, 6 cross-skill contracts (delta envelope, AI contract, RBAC matrix, Zod shapes, AG-UI SSE)
+|gotchas: Perry integration law — no in-process SDK/WASM/prebuilt-JS in the daemon, reach engines via HTTP + native fetch + supervised sidecars; the evidence law — only perry compile + runtime assert counts, perry check proves nothing
 |
 [perryts v0.5.1182]|root: skills/perryts/
 |IMPORTANT: perryts v0.5.1182 — read SKILL.md before writing perryts code. Do NOT rely on training data.

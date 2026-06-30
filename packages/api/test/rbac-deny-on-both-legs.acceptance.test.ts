@@ -1,4 +1,4 @@
-// Red-phase ATDD acceptance scaffold for Story 2.3 — the two-layer deny-deny
+// Red-phase ATDD acceptance scaffold — the two-layer deny-deny
 // contract: a cross-scope read is denied at the tRPC middleware layer AND would
 // be denied at the SurrealDB row layer, with neither layer alone sufficient to
 // grant access.
@@ -8,9 +8,9 @@
 // row escalation DO NOT EXIST yet. The middleware leg is exercised via an
 // in-process tRPC caller (no network); the row leg uses a real `surreal`
 // sidecar spawned ONLY when un-skipped. Top-level static imports are limited to
-// `vitest`. Serialize sidecar-backed tests at green phase (Epic-1 flake).
+// `vitest`. Serialize sidecar-backed tests at green phase (known sidecar flake under concurrency).
 //
-// Behavior asserted (names describe behavior, never an AC/risk id):
+// Behavior asserted (names describe behavior, not a planning id):
 //  - the middleware denies a cross-scope read with the FORBIDDEN code
 //  - the same read returns [] at the row layer (record-access session)
 //  - middleware-bypassed: the row layer still denies
@@ -25,7 +25,7 @@ const acceptance = test;
 const LOOPBACK = "127.0.0.1";
 const ROOT_USER = "root";
 const ROOT_PASS = "root_secret_for_test_only";
-const SIDECAR_PORT = 18_062; // distinct from other story-2-3 / 1-3 sidecar ports
+const SIDECAR_PORT = 18_062; // distinct from the other sidecar ports in the suite
 const HEALTH_POLL_MS = 100;
 const HEALTH_MAX_ATTEMPTS = 50;
 const SURREAL_NS = "perry";
@@ -50,7 +50,7 @@ type SigninRecord = (
   body: { ac: string; db: string; ns: string } & Record<string, unknown>
 ) => Promise<string>;
 
-// The shape of a tRPC error the RBAC middleware throws. The precise AD-21 code
+// The shape of a tRPC error the RBAC middleware throws. The precise code
 // lives in `shape.data.code`; the nearest native code is FORBIDDEN.
 interface CapturedError {
   readonly dataCode?: string;
@@ -98,7 +98,7 @@ const startMemorySidecar = async (): Promise<Sidecar> => {
 };
 
 // Drive the RBAC-protected procedure in-process and capture the thrown error's
-// native + AD-21 codes. The router/procedure factory lands with Story 2.3.
+// native + precise codes. The router/procedure factory lands with the RBAC slice.
 const callCrossScopeRead = async (
   principalRole: string
 ): Promise<CapturedError | undefined> => {

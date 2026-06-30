@@ -48,8 +48,8 @@ const CODE_TO_TREATMENT: Record<AuthErrorCode, AuthTreatment> = {
 export const treatmentForCode = (code: AuthErrorCode): AuthTreatment =>
   CODE_TO_TREATMENT[code];
 
-// The in-app route each treatment resolves to. The two D6 placeholders
-// (two-factor / step-up) point at DEFINED routes whose backends land in Epic 5;
+// The in-app route each treatment resolves to. The two placeholders
+// (two-factor / step-up) point at DEFINED routes whose backends land later;
 // they are reachable, non-trap stubs with a forward path — never a dead-end.
 export const TREATMENT_ROUTE: Record<AuthTreatment, string> = {
   "sign-in": "/login",
@@ -87,14 +87,14 @@ export interface AuthErrorEnvelope {
   readonly status?: number;
 }
 
-// The forced-change signal header (Story 2.6). Its presence forces the
+// The forced-change signal header. Its presence forces the
 // PASSWORD_CHANGE_REQUIRED treatment regardless of the body code, so the gate
 // mounts even when the body carries only the native FORBIDDEN.
 const REQUIRE_PASSWORD_CHANGE_HEADER = "x-require-password-change";
 
 // Resolve the precise AuthErrorResponse code from a server response envelope.
 // The code rides in the body (`{ error: { code } }` or a bare `{ code }`), with
-// the x-require-password-change header taking precedence (the 2.6 contract). An
+// the x-require-password-change header taking precedence (the forced-password-change contract). An
 // unrecognized payload yields `undefined` so callers fall back to the generic
 // treatment rather than inventing a code.
 export const authCodeFromEnvelope = (

@@ -2,7 +2,7 @@ import { env } from "@perry-starter/env/server";
 import { createFileRoute } from "@tanstack/react-router";
 
 // The web app is NOT the auth authority. better-auth lives ONLY on the
-// apps/worker gatekeeper (AD-8/AD-23); this same-origin route is a thin relay
+// apps/worker gatekeeper; this same-origin route is a thin relay
 // that forwards `/api/auth/*` to that gatekeeper (BETTER_AUTH_URL). The browser
 // auth client calls this relay; the relay never issues a session or token.
 const forward = (request: Request): Promise<Response> => {

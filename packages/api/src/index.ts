@@ -29,12 +29,12 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   });
 });
 
-// --- The tRPC RBAC middleware leg (AD-9 first authorization layer) -----------
+// --- The tRPC RBAC middleware leg (the first authorization layer) ------------
 //
 // It authorizes against the ONE single-sourced matrix in @perry-starter/auth,
 // reading the GLOBAL admin-plugin role claim (user.role) split on ',' — never an
 // org-structural role. A denial throws the nearest native tRPC code (FORBIDDEN)
-// and carries the precise AD-21 code in shape.data.code via the errorFormatter.
+// and carries the precise code in shape.data.code via the errorFormatter.
 // This leg is necessary but NOT sufficient — the SurrealDB row-level PERMISSIONS
 // (generated from the same matrix) are the second leg; neither alone grants.
 
@@ -57,7 +57,7 @@ const ROLES = roles as unknown as Record<string, AuthorizingRole | undefined>;
 // hold. Derived from the single matrix, so it cannot drift from the row leg.
 const CROSS_USER_READ = { user: ["list"] } as const;
 
-// AD-21 envelope: SESSION_EXPIRED / ACCOUNT_LOCKED etc. are NOT valid TRPCError
+// The error envelope: SESSION_EXPIRED / ACCOUNT_LOCKED etc. are NOT valid TRPCError
 // codes, so the precise code rides in shape.data.code. For an authorization denial
 // the precise code IS the native FORBIDDEN; a richer denial may attach its own
 // code via the error cause.
@@ -118,7 +118,7 @@ const crossUserReadRouter = tRbac.router({
 export const createCrossUserReadCaller = (ctx: RbacContext) =>
   crossUserReadRouter.createCaller(ctx);
 
-// Project a thrown error into its native tRPC code + the AD-21 shape.data.code.
+// Project a thrown error into its native tRPC code + the precise shape.data.code.
 export const toErrorShape = (
   error: unknown
 ): { readonly dataCode?: string; readonly nativeCode?: string } => {

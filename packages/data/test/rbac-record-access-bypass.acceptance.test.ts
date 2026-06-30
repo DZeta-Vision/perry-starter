@@ -1,4 +1,4 @@
-// ATDD acceptance suite for Story 2.3 — the local-leg record-access
+// ATDD acceptance suite for the local-leg record-access
 // scoped-credential perimeter, the root-cred NEGATIVE, role-scoped reads, audit
 // write-authenticity, and the DB-layer ES256 JWT fail-closed verification.
 //
@@ -13,7 +13,7 @@
 // here are testable over HTTP; only the daemon-compile of the per-user/per-role
 // credential-acquisition leg is design-gated.
 //
-// Behavior asserted (names describe behavior, never an AC/risk id):
+// Behavior asserted (names describe behavior, never a planning id):
 //  - a scoped record-access Bearer session reads only its $auth-owned rows
 //  - with a real audit_log row seeded, admin AND superadmin READ it (row
 //    returned) while a member is DENIED (empty) — the $auth.role escalation
@@ -35,7 +35,7 @@ const acceptance = test;
 const LOOPBACK = "127.0.0.1";
 const ROOT_USER = "root";
 const ROOT_PASS = "root_secret_for_test_only";
-const SIDECAR_PORT = 18_061; // distinct from the 1-3 sidecar ports (18_039/18_043)
+const SIDECAR_PORT = 18_061; // distinct from the other acceptance suites' sidecar ports (18_039/18_043)
 const HEALTH_POLL_MS = 100;
 const HEALTH_MAX_ATTEMPTS = 50;
 const SURREAL_NS = "perry";
@@ -234,7 +234,7 @@ describe("the local leg queries through a scoped record-access Bearer session bo
         await applySchemaAsRoot(sql, sidecar.url);
         // The admin/superadmin-scoped sessions (global user.role contains 'admin'
         // / 'superadmin') can read an admin-gated row; a member-scoped session
-        // reads []. This exercises the $auth.role escalation clause (Story 2.3).
+        // reads []. This exercises the $auth.role escalation clause.
         const adminToken = await signin(sidecar.url, {
           ns: SURREAL_NS,
           db: SURREAL_DB,

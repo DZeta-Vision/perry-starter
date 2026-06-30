@@ -1,9 +1,9 @@
 # Lefthook configuration
 # https://github.com/evilmartians/lefthook
 #
-# LOCAL convenience only — bypassable with `git commit --no-verify` (FR-54).
+# LOCAL convenience only — bypassable with `git commit --no-verify`.
 # CI (.github/workflows/ci.yml) is the AUTHORITATIVE, non-bypassable gate; the
-# same commands re-run there to actually block a merge (AD-17). Never rely on
+# same commands re-run there to actually block a merge. Never rely on
 # Lefthook to enforce anything — it is fast local feedback, nothing more.
 
 pre-commit:
@@ -15,6 +15,13 @@ pre-commit:
     - name: check
       run: bun run check
       glob: "*.{js,jsx,ts,tsx,json,jsonc,css}"
+
+    # Committed code must be BMAD-agnostic: no planning-artifact ids (AD/FR/NFR/
+    # AC/Story/risk) in tracked source or tests. Scans the tracked code tree;
+    # only runs when code files are staged. CI re-runs it as the blocking gate.
+    - name: bmad-refs
+      run: bun run gate:bmad-refs
+      glob: "*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,surql}"
 
 pre-push:
   parallel: false
