@@ -2,7 +2,7 @@
 // completion, and the device-local pre-auth locale migration.
 //
 // An authenticated-but-unverified member hitting any protected op is denied
-// EMAIL_NOT_VERIFIED (carried in the AD-21 shape.data.code envelope) and held on
+// EMAIL_NOT_VERIFIED (carried in the shape.data.code envelope) and held on
 // the wall, with a rate-limited resend affordance phrased non-numerically. A valid
 // unexpired verification link clears the wall and reaches the dashboard; expired or
 // already-consumed tokens are rejected with the SAME neutral copy. The device-local

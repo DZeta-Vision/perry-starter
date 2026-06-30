@@ -7,7 +7,7 @@
 // destructure `{ data, error }` and handle `error` FIRST (audit a failed send),
 // never leaking provider/stack detail and never throwing out of the send path.
 //
-// The template is the `perry-verification` react-email component (AD-21: camelCase
+// The template is the `perry-verification` react-email component (camelCase
 // variables, Lingui-keyed FR/EN strings). The FR/EN catalog is activated off the
 // account `locale` at render time — keyed off the prop, no request context.
 
@@ -88,7 +88,7 @@ export const dispatchVerificationEmail = async (
   if (error) {
     deps.audit("auth.verification_email_failed");
   } else if (data) {
-    // Success — never log the payload or any provider secret (AD-21).
+    // Success — never log the payload or any provider secret.
     deps.audit("auth.verification_email_sent");
   }
   return {

@@ -1,6 +1,6 @@
 // The daemon token-at-rest envelope + the PERRY_TARGET secure-store seam.
 //
-// The no-plaintext floor (AD-11): an auth token persisted on the desktop client
+// The no-plaintext floor: an auth token persisted on the desktop client
 // is NEVER written as plaintext (nor "plaintext-with-extra-steps"). The desktop
 // primary is the OS Keychain (perry/system); where no secure store exists
 // (headless Linux — [UNVALIDATED — S5], the perry-ui-gtk4 keychain backend has
@@ -9,7 +9,7 @@
 // cookies — selected at build time by PERRY_TARGET, never a runtime branch into
 // a plaintext store.
 //
-// Real key custody (AD-12 class 3): the AES-256-GCM key is DERIVED from a
+// Real key custody (its own key class): the AES-256-GCM key is DERIVED from a
 // passphrase via crypto.subtle PBKDF2 over a per-token random salt, so the key
 // is re-derivable on open (custody is the passphrase + the persisted salt) — not
 // an ephemeral, discarded key. Argon2id is NOT a crypto.subtle algorithm at the
@@ -20,7 +20,7 @@
 // `perry compile` — crypto.subtle (AES-GCM / PBKDF2 deriveKey / importKey),
 // crypto.getRandomValues, the native argon2 module — and NO npm/WASM/prebuilt-JS
 // crypto lib enters the daemon. The envelope key material is generated
-// independently and never reuses any other AD-12 key class.
+// independently and never reuses any other key class.
 
 // Derivation cost for the AES key bytes (crypto.subtle PBKDF2, SHA-256).
 const PBKDF2_ITERATIONS = 600_000;
@@ -153,7 +153,7 @@ export const secureStoreForTarget = (
   return { kind: "app-envelope", persistsPlaintext: false };
 };
 
-// Generate the envelope passphrase/master INDEPENDENTLY (AD-12 class 3) — from
+// Generate the envelope passphrase/master INDEPENDENTLY (its own key class) — from
 // the runtime CSPRNG, never derived from the better-auth secret or any other key
 // class.
 export const generateEnvelopePassphrase = (): string =>

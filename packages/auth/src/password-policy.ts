@@ -5,7 +5,7 @@
 // `emailAndPassword.minPasswordLength` / `maxPasswordLength`, so config and policy
 // cannot drift. Breach screening is the `haveIBeenPwned()` k-anonymity check (the
 // SHA-1 first-5-hex prefix is sent to the range API; only the suffix list comes
-// back). Per D7 the screen is defense-in-depth atop the NIST policy — on a range-
+// back). The screen is defense-in-depth atop the NIST policy — on a range-
 // API outage it FAILS OPEN (accepts the NIST-valid password) so a third-party
 // outage never bricks the only-unblocked action; the caller records an audit event.
 //
@@ -14,7 +14,7 @@
 export const NIST_MIN_PASSWORD_LENGTH = 12;
 export const NIST_MAX_PASSWORD_LENGTH = 128;
 
-// The HIBP range API host (egress-allowlisted on the cloud authority, AD-29).
+// The HIBP range API host (egress-allowlisted on the cloud authority).
 const HIBP_RANGE_URL = "https://api.pwnedpasswords.com/range";
 
 // A minimal fetch shape so the range call is injectable for tests and so this
@@ -31,7 +31,7 @@ export type RangeFetch = (
 export interface HibpScreenResult {
   // Whether the password appeared in the breach corpus (reachable + matched).
   readonly breached: boolean;
-  // Whether the range API was unreachable and the screen fell OPEN (D7).
+  // Whether the range API was unreachable and the screen fell OPEN.
   readonly failedOpen: boolean;
 }
 
@@ -97,7 +97,7 @@ export const sha1HexUpper = async (input: string): Promise<string> => {
 
 // k-anonymity breach screen. Sends only the 5-hex prefix; matches the local suffix
 // against the returned list. On ANY transport/parse failure it returns
-// `failedOpen` (D7 fail-OPEN) rather than throwing — the caller audits the fallback.
+// `failedOpen` (fail-OPEN) rather than throwing — the caller audits the fallback.
 export const screenPasswordAgainstHibp = async (
   password: string,
   fetchRange: RangeFetch

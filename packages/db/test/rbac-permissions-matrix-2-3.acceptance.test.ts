@@ -1,5 +1,5 @@
-// Red-phase ATDD acceptance scaffold for Story 2.3 — the row-level PERMISSIONS
-// matrix shape in the merged .surql schema.
+// Red-phase ATDD acceptance scaffold for the row-level PERMISSIONS matrix shape
+// in the merged .surql schema.
 //
 // RED PHASE: every test is `test.skip` (aliased `acceptance`). The
 // admin/superadmin escalation clauses and the append-only `audit_log` table DO
@@ -22,7 +22,7 @@ const acceptance = test;
 
 // Tables intentionally sealed to record-access sessions (PERMISSIONS NONE).
 const SEALED_TABLES = new Set(["user", "document_delta"]);
-// The append-only audit table (Story 2.3 adds it).
+// The append-only audit table (added at green phase).
 const AUDIT_TABLE = "audit_log";
 
 // Top-level regex literals (Biome: never build regex inside loops).
@@ -107,7 +107,7 @@ describe("the audit table is append-only for every role including superadmin", (
       expect(audit).toBeDefined();
       const body = (audit as TableBlock).body;
       // Append-only: a create grant exists; NO update/delete grant exists for any
-      // role (the AD-21 immutability floor — superadmin cannot rewrite audit).
+      // role (the immutability floor — superadmin cannot rewrite audit).
       expect(FOR_CREATE_RE.test(body)).toBe(true);
       // The only update/delete mention permitted is `FOR update, delete NONE`.
       const hasUpdateDeleteNone = FOR_UPDATE_DELETE_NONE_RE.test(body);

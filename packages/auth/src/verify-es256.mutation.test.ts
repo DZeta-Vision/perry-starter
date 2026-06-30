@@ -28,7 +28,7 @@ const DECISION_SIDE_EFFECT_RE =
 const stripComments = (src: string): string =>
   src.replace(BLOCK_COMMENT_RE, "").replace(LINE_COMMENT_RE, "$1");
 
-// --- Modeled verify decision (mirrors the AC4 logic, sans real crypto) -------
+// --- Modeled verify decision (mirrors the real verify logic, sans real crypto) -------
 
 interface DecodedToken {
   readonly alg: string;
@@ -63,7 +63,7 @@ const NOW = 1_700_000_000;
 const FUTURE = NOW + 900;
 const PAST = NOW - 60;
 
-// Replicated AC4 checkers — each returns true when the verify behaves correctly.
+// Replicated verify checkers — each returns true when the verify behaves correctly.
 const eddsaRejected = (v: VerifyFn): boolean =>
   v({ alg: "EdDSA", exp: FUTURE, sigValid: true }, NOW) === null;
 // `alg:none` is modeled like the EdDSA case (sigValid: true) so that ONLY the
@@ -78,7 +78,7 @@ const validAccepted = (v: VerifyFn): boolean =>
   v({ alg: "ES256", exp: FUTURE, sigValid: true }, NOW) !== null;
 
 describe("verify-es256 anti-vacuous twins", () => {
-  test("the fail-closed verify passes every AC4 checker (clean control)", () => {
+  test("the fail-closed verify passes every verify checker (clean control)", () => {
     expect(eddsaRejected(failClosedVerify)).toBe(true);
     expect(noneRejected(failClosedVerify)).toBe(true);
     expect(expiredRejected(failClosedVerify)).toBe(true);

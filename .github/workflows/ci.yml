@@ -54,6 +54,13 @@ jobs:
       - name: Type check
         run: bun run check-types
 
+      # BMAD-agnostic guard (BLOCKING) — committed code must carry no
+      # planning-artifact ids (AD-##/FR-##/NFR-##/AC#/Story #.#/risk ids) in
+      # tracked source or tests. Scans the tracked code tree via `git ls-files`,
+      # so gitignored planning artifacts under _bmad-output/ never reach it.
+      - name: BMAD-reference guard
+        run: node scripts/bmad-ref-guard.mjs
+
       # Secret scan (BLOCKING) — pinned gitleaks CLI. The gitleaks GitHub Action
       # requires a paid license inside an organization; the CLI is free and needs
       # none. Exits non-zero on any finding.
@@ -129,6 +136,16 @@ jobs:
       - name: Full-route a11y (axe)
         run: bun run test:e2e
         continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # NOTE: the epic-close documentation guard (scripts/epic-close-doc-guard.mjs)
+  # is intentionally NOT a CI job. It checks that the story files under
+  # _bmad-output/ reflect execution state, but that directory is gitignored, so
+  # CI (which clones only tracked files) can never see it. It runs LOCALLY via
+  # `bun run gate:epic-close <epic>` as part of the epic-close ritual; the
+  # committed-code half of that discipline is the BMAD-reference guard above,
+  # which IS enforced here.
+  # ---------------------------------------------------------------------------
 
   # ---------------------------------------------------------------------------
   # meta-gate (BLOCKING) — anti-vacuous (mutation-twin) enforcer.

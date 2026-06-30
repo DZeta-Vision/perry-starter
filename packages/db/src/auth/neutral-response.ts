@@ -15,7 +15,7 @@ export interface NeutralAuthEnvelope {
 }
 
 // A generic "we have processed your request" key — never "already registered",
-// "not found", "unverified", etc. Lingui-keyed (AD-21), resolved under the active
+// "not found", "unverified", etc. Lingui-keyed, resolved under the active
 // catalog at render time.
 const NEUTRAL_BODY = Object.freeze({ message: "auth.verification.maybe_sent" });
 
