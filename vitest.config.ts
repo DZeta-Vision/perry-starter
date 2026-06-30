@@ -21,6 +21,10 @@ const inRepoEnv = {
   BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
   BETTER_AUTH_URL: "http://127.0.0.1:3000",
   CORS_ORIGIN: "http://127.0.0.1:3000",
+  GITHUB_CLIENT_ID: "test-github-client-id",
+  GITHUB_CLIENT_SECRET: "test-github-client-secret",
+  GOOGLE_CLIENT_ID: "test-google-client-id",
+  GOOGLE_CLIENT_SECRET: "test-google-client-secret",
 };
 
 export default defineConfig({
@@ -63,6 +67,34 @@ export default defineConfig({
           // (rename/remove-reference/thin-scope) which also run as node:fs gates.
           include: ["packages/**/*.test.ts", "scripts/**/*.test.ts"],
           env: inRepoEnv,
+          // The auth acceptance/gate suites drive the REAL better-auth handler over
+          // an in-memory adapter — each sign-up/verify round-trips through scrypt
+          // password hashing, which is deliberately slow and, under multi-file CI
+          // contention, can exceed the 5s default. Headroom costs nothing for the
+          // (majority) pure-logic tests and still fails a real hang.
+          testTimeout: 30_000,
+        },
+        resolve: {
+          alias: {
+            // TEST-ONLY shim: the DB-layer ES256 fail-closed test in packages/data
+            // mints tokens with the non-prod fixture that pairs with the schema's
+            // JWT public key. The fixture lives in packages/auth, but packages/data
+            // must NOT declare a build-graph dependency on the auth tier (the seam
+            // tier sits below auth). This alias resolves the fixture for the test
+            // runner only; it adds no runtime/package.json edge.
+            "@perry-starter/auth/test-jwt": fileURLToPath(
+              new URL("./packages/auth/src/test-jwt.ts", import.meta.url)
+            ),
+            // TEST-ONLY shim (same rationale as above): the anti-enumeration
+            // matrix test lives in packages/db (the canonical neutral envelope's
+            // home) and drives the pre-auth registration surfaces, which live in
+            // the higher auth tier's acceptance harness. packages/db must NOT
+            // declare a build-graph dependency on auth (db sits below auth), so the
+            // test runner resolves this specifier here. No runtime/package.json edge.
+            "@perry-starter/auth/test-harness": fileURLToPath(
+              new URL("./packages/auth/src/test-harness.ts", import.meta.url)
+            ),
+          },
         },
       },
       {

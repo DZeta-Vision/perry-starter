@@ -107,11 +107,13 @@ export const guardDataAccess = (state: SessionState): "allow" | "block" =>
 export const canEnqueue = (state: SessionState): boolean =>
   guardDataAccess(state) === "allow";
 
-// The flush gate for queued offline work. It never permits a flush while offline
-// and HOLDS (defers — neither flushing nor discarding) when the injected
-// revocation outcome reports the identity was revoked. The real revalidation
-// against the cloud authority is wired separately; until then this is the
-// deterministic decision the queue's hold-by-default flush relies on.
+// The flush gate for queued offline work. It never permits a flush while
+// offline, and otherwise releases ONLY on an affirmatively-valid revalidation —
+// every other outcome (a revoked outcome, or none yet) HOLDS. It makes no
+// revocation judgement of its own: the authoritative revoked → quarantine
+// decision has a SINGLE owner, the data-tier flush-gate, and this gate defers to
+// it by holding anything not proven valid (which also enforces
+// revalidate-before-flush — an absent outcome never releases).
 export const canFlush = ({
   online,
   revocationOutcome,
@@ -119,8 +121,5 @@ export const canFlush = ({
   if (!online) {
     return false;
   }
-  if (revocationOutcome === "revoked") {
-    return "hold";
-  }
-  return true;
+  return revocationOutcome === "valid" ? true : "hold";
 };

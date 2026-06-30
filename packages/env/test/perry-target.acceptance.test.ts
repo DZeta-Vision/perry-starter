@@ -30,8 +30,27 @@ const validServerEnv = (): Record<string, unknown> => ({
   NODE_ENV: "test",
 });
 
+const SURREAL_KEYS = [
+  "SURREAL_URL",
+  "SURREAL_NS",
+  "SURREAL_DB",
+  "SURREAL_USER",
+  "SURREAL_PASS",
+];
+
 const withoutKey = (input: Record<string, unknown>, key: string) =>
   Object.fromEntries(Object.entries(input).filter(([k]) => k !== key));
+
+// The cloud-relay web tier: it reaches data THROUGH the gatekeeper and holds no
+// SURREAL_* binding. Build a valid relay env carrying none of the SURREAL_* keys.
+const relayServerEnv = (): Record<string, unknown> => {
+  const base = validServerEnv();
+  const withoutSurreal = SURREAL_KEYS.reduce(
+    (acc, key) => withoutKey(acc, key),
+    base
+  );
+  return { ...withoutSurreal, PERRY_TARGET: "cloud-relay" };
+};
 
 test("a valid PERRY_TARGET + SURREAL env parses for both target values and the schema carries no DATABASE_URL key", async () => {
   const mod: ServerEnvModule = await import(SERVER_ENV_MODULE);
@@ -81,4 +100,21 @@ test("invalid PERRY_TARGET, missing PERRY_TARGET, missing SURREAL_URL, and a rei
       DATABASE_URL: "postgres://localhost:5432/legacy",
     })
   ).toThrow();
+});
+
+test("SURREAL_* is conditional by target: the cloud-relay tier validates without it, while the data owner still requires it", async () => {
+  const mod: ServerEnvModule = await import(SERVER_ENV_MODULE);
+
+  // The cloud-relay web tier carries NO SURREAL_* binding (it reaches data via
+  // the gatekeeper) and must still validate — otherwise the relay throws
+  // "Invalid environment variables" at boot and every request 500s.
+  expect(() => mod.parseServerEnv(relayServerEnv())).not.toThrow();
+
+  // The data-owner target (local-sidecar) still REQUIRES the full SURREAL_*
+  // contract: dropping any one of the keys fails validation.
+  for (const key of SURREAL_KEYS) {
+    expect(() =>
+      mod.parseServerEnv(withoutKey(validServerEnv(), key))
+    ).toThrow();
+  }
 });

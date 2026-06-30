@@ -12,6 +12,7 @@
     "./documents": "./src/documents.ts",
     "./documents.local": "./src/documents.local.ts",
     "./documents.cloud": "./src/documents.cloud.ts",
+    "./flush-gate": "./src/flush-gate.ts",
     "./surreal-http": "./src/surreal-http.ts"
   },
   "scripts": {

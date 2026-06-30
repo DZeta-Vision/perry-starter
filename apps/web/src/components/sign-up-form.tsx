@@ -1,71 +1,137 @@
+import { type FormEvent, useId, useState } from "react";
+
+import { AuthFormShell } from "@/components/auth/auth-form-shell";
+import { ErrorSummary } from "@/components/auth/error-summary";
+import { PasswordField } from "@/components/auth/password-field";
+import { tAuth } from "@/lib/auth-strings";
+import { useLocaleStore } from "@/lib/locale-store";
+
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
-// Placeholder sign-up form for the app-shell. It presents the fields and copy
-// with no behavior wired yet — the authentication flow (validation, submit,
-// session) is layered on in a later epic. Rendered standalone so it needs no
-// router or auth context. Mirrors sign-in-form's placeholder treatment.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// The sign-up surface. Same accessible-form contract as sign-in (centered
+// max-w-md column, real labels + meaningful placeholders, focusable reveal,
+// aria-invalid + aria-describedby + polite summary, single primary that disables
+// while pending) and the SAME generic anti-enumeration error copy — a failed
+// sign-up never reveals "already registered".
 export default function SignUpForm({
   onSwitchToSignIn,
+  onSubmit,
 }: {
   onSwitchToSignIn?: () => void;
+  onSubmit?: (values: {
+    name: string;
+    email: string;
+    password: string;
+  }) => Promise<void>;
 }) {
-  return (
-    <div className="mx-auto mt-10 w-full max-w-md p-6">
-      <h1 className="mb-6 text-center font-bold text-3xl">Create Account</h1>
+  const locale = useLocaleStore((state) => state.locale);
+  const emailId = useId();
+  const emailErrorId = useId();
+  const summaryId = useId();
 
-      <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailInvalid, setEmailInvalid] = useState(false);
+  const [formError, setFormError] = useState<string | undefined>(undefined);
+  const [pending, setPending] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!EMAIL_RE.test(email)) {
+      setEmailInvalid(true);
+      setFormError(tAuth(locale, "auth.error.generic"));
+      return;
+    }
+    setEmailInvalid(false);
+    setFormError(undefined);
+    setPending(true);
+    try {
+      await onSubmit?.({ name, email, password });
+    } catch {
+      setFormError(tAuth(locale, "auth.error.generic"));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <AuthFormShell title={tAuth(locale, "auth.signUp.title")}>
+      <form className="space-y-4" noValidate onSubmit={handleSubmit}>
         <div className="space-y-2">
           <label className="text-xs" htmlFor="signup-name">
-            Name
+            {tAuth(locale, "auth.field.name.label")}
           </label>
           <Input
             autoComplete="name"
             id="signup-name"
             name="name"
-            placeholder="Your name"
+            onChange={(event) => setName(event.target.value)}
+            placeholder={tAuth(locale, "auth.field.name.placeholder")}
             type="text"
+            value={name}
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs" htmlFor="signup-email">
-            Email
+          <label className="text-xs" htmlFor={emailId}>
+            {tAuth(locale, "auth.field.email.label")}
           </label>
           <Input
+            aria-describedby={emailInvalid ? emailErrorId : undefined}
+            aria-invalid={emailInvalid || undefined}
             autoComplete="email"
-            id="signup-email"
+            id={emailId}
             name="email"
-            placeholder="you@example.com"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder={tAuth(locale, "auth.field.email.placeholder")}
             type="email"
+            value={email}
           />
+          {emailInvalid ? (
+            <p className="text-destructive text-xs" id={emailErrorId}>
+              {tAuth(locale, "auth.error.generic")}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-2">
           <label className="text-xs" htmlFor="signup-password">
-            Password
+            {tAuth(locale, "auth.field.password.label")}
           </label>
-          <Input
+          <PasswordField
             autoComplete="new-password"
             id="signup-password"
+            locale={locale}
             name="password"
-            placeholder="Create a password"
-            type="password"
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={tAuth(locale, "auth.field.password.placeholder")}
+            value={password}
           />
         </div>
 
-        <Button className="w-full" disabled type="submit">
-          Sign Up
+        <ErrorSummary id={summaryId} message={formError} />
+
+        <Button
+          className="w-full"
+          data-primary="true"
+          disabled={pending}
+          type="submit"
+        >
+          {tAuth(locale, "auth.signUp.submit")}
         </Button>
       </form>
 
       {onSwitchToSignIn ? (
         <div className="mt-4 text-center">
           <Button onClick={onSwitchToSignIn} type="button" variant="link">
-            Already have an account? Sign In
+            {tAuth(locale, "auth.signUp.switch")}
           </Button>
         </div>
       ) : null}
-    </div>
+    </AuthFormShell>
   );
 }

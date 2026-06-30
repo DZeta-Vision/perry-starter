@@ -9,6 +9,11 @@
         "dependencies": {
           "deny": ["seam", "infra"]
         }
+      },
+      "authority": {
+        "dependencies": {
+          "deny": ["contracts", "seam", "infra"]
+        }
       }
     }
   },

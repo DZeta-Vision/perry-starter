@@ -18,14 +18,21 @@ const MAX_REDIRECT_HOPS = 5;
 
 // Host-pinned allowlist, sourced from the deployment topology — not invented:
 //   - the cloud gatekeeper Worker (the daemon's single cloud egress target),
-//   - the updater host (release-channel downloads).
-// Add the Sentry-ingest host and configured OAuth-provider hosts here at deploy
-// time. The breach-range API is intentionally excluded: breach checks run on
-// the cloud authority, so that egress belongs to the Worker, not the daemon —
-// add it here only if a daemon-side breach-check path is actually built.
+//   - the updater host (release-channel downloads),
+//   - the GitHub + Google OAuth authorization + token hosts.
+// Add the Sentry-ingest host here at deploy time. The breach-range API is
+// intentionally excluded: breach checks run on the cloud authority, so that
+// egress belongs to the Worker, not the daemon — add it here only if a
+// daemon-side breach-check path is actually built. The OAuth-provider host
+// strings are a deploy-time host-set; the host-pinned-HTTPS contract is what
+// this allowlist enforces.
 export const EGRESS_ALLOWLIST: readonly string[] = [
   "api.perryts.com",
   "hub.perryts.com",
+  "github.com",
+  "api.github.com",
+  "accounts.google.com",
+  "oauth2.googleapis.com",
 ];
 
 // Emit a structured audit record for a blocked egress attempt. A blocked

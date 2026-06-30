@@ -78,7 +78,6 @@
         "@hugeicons/core-free-icons": "^4.2.1",
         "@hugeicons/react": "^1.1.7",
         "@perry-starter/api": "workspace:*",
-        "@perry-starter/auth": "workspace:*",
         "@perry-starter/env": "workspace:*",
         "@react-email/components": "^1.0.12",
         "@sentry/node": "^10.59.0",
@@ -147,6 +146,19 @@
         "wrangler": "^4.103.0",
       },
     },
+    "apps/worker": {
+      "name": "@perry-starter/worker",
+      "version": "0.0.0",
+      "dependencies": {
+        "@perry-starter/auth": "workspace:*",
+        "@perry-starter/env": "workspace:*",
+      },
+      "devDependencies": {
+        "@perry-starter/config": "workspace:*",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/ai": {
       "name": "@perry-starter/ai",
       "version": "0.0.0",
@@ -179,6 +191,7 @@
     "packages/auth": {
       "name": "@perry-starter/auth",
       "dependencies": {
+        "@perry-starter/db": "workspace:*",
         "@perry-starter/env": "workspace:*",
         "better-auth": "catalog:",
         "dotenv": "catalog:",
@@ -744,6 +757,8 @@
     "@perry-starter/env": ["@perry-starter/env@workspace:packages/env"],
 
     "@perry-starter/infra": ["@perry-starter/infra@workspace:packages/infra"],
+
+    "@perry-starter/worker": ["@perry-starter/worker@workspace:apps/worker"],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
