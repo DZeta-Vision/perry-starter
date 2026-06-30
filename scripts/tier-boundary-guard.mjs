@@ -13,9 +13,16 @@
 //   --root <dir>   scan the repo graph; exit 0 when clean.
 //   --scan <file>  scan a single file; exit non-zero on any violation.
 //
-// Blocking merge-gate enforcement, the full resolved-dependency-closure scan,
-// the non-literal dynamic-import ban, and the compile-and-run leg are deferred
-// to later hardening; this lands the structural guard plus its self-test.
+// The daemon-graph scan covers the full text of each source file (every string
+// literal), not just import-position specifiers. This closes the non-literal
+// dynamic-import gap: a denylisted specifier bound to a variable and then
+// dynamic-imported (`const s = "<engine>"; import(s)`) is still caught, because
+// the denylisted name appears as a literal in the file. A daemon-graph file has
+// no legitimate reason to even name an in-process WASM/prebuilt-JS engine.
+//
+// Blocking merge-gate enforcement, the full resolved-dependency-closure scan
+// across installed transitive deps, and the compile-and-run leg are deferred to
+// later hardening; this lands the structural guard plus its self-test.
 //
 // Dependency-free; uses node:fs only (mirrors scripts/meta-gate.mjs).
 
@@ -23,11 +30,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 // Denylisted cloud/WASM/prebuilt-JS specifiers that must never be reachable in
-// the daemon / seam graph (seeded from the build-time seam denylist).
+// the daemon / seam graph (seeded from the build-time seam denylist). `loro-crdt`
+// is the npm wrapper the BROWSER tier uses for collaborative editing; it ships /
+// instantiates WASM and is foreclosed in the daemon (Loro is browser/sidecar
+// only). It is denied here in the daemon graph yet stays legal under apps/web.
 const DAEMON_DENYLIST = [
   "@electric-sql/pglite",
   "@surrealdb/wasm",
   "loro-wasm",
+  "loro-crdt",
   "@tanstack/ai",
   "@ag-ui/core",
 ];
@@ -80,6 +91,19 @@ const specifiersOf = (text) => {
   return found;
 };
 
+// Every single/double-quoted string literal in the source. The daemon-graph scan
+// uses this (a superset of the import-position specifiers) so a denylisted engine
+// named anywhere — including a variable later fed to a non-literal `import()` —
+// is caught, not just one sitting in a static `from "…"`/`import("…")` position.
+const STRING_LITERAL_RE = /["']([^"'\r\n]+)["']/g;
+const stringLiteralsOf = (text) => {
+  const found = [];
+  for (const match of text.matchAll(STRING_LITERAL_RE)) {
+    found.push(match[1]);
+  }
+  return found;
+};
+
 const isConcreteImpl = (specifier) =>
   CONCRETE_IMPL.test(specifier.replace(SOURCE_EXT, ""));
 
@@ -107,13 +131,13 @@ const walk = (dir, out) => {
   }
 };
 
-const scanRoots = (rootDir, roots, check, label) => {
+const scanRoots = (rootDir, roots, check, label, extract = specifiersOf) => {
   const violations = [];
   for (const root of roots) {
     const files = [];
     walk(resolve(rootDir, root), files);
     for (const file of files) {
-      for (const specifier of specifiersOf(readFileSync(file, "utf8"))) {
+      for (const specifier of extract(readFileSync(file, "utf8"))) {
         if (check(specifier)) {
           violations.push(
             `${label}: ${relative(rootDir, file)} imports "${specifier}"`
@@ -127,11 +151,15 @@ const scanRoots = (rootDir, roots, check, label) => {
 
 const scanRepo = (rootDir) => [
   ...scanRoots(rootDir, UI_ROOTS, isConcreteImpl, "concrete-impl-into-UI"),
+  // The daemon graph is scanned over every string literal (not just import
+  // positions) so a denylisted engine reached through a non-literal dynamic
+  // import is caught.
   ...scanRoots(
     rootDir,
     DAEMON_GRAPH_ROOTS,
     isDenylisted,
-    "denylisted-dep-into-daemon"
+    "denylisted-dep-into-daemon",
+    stringLiteralsOf
   ),
 ];
 
