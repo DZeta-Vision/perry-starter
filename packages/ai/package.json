@@ -13,6 +13,7 @@
     "./assistant.local": "./src/assistant.local.ts",
     "./assistant.cloud": "./src/assistant.cloud.ts",
     "./contract": "./src/ag-ui-contract.ts",
+    "./proxy": "./src/proxy.ts",
     "./request-assembly": "./src/request-assembly.ts",
     "./stream-emit": "./src/stream-emit.ts",
     "./upstream-openai": "./src/upstream-openai.ts",
