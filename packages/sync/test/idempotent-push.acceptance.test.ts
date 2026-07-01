@@ -26,7 +26,12 @@ import { pushDeltaBatch } from "../src/push";
 const LOOPBACK = "127.0.0.1";
 const ROOT_USER = "root";
 const ROOT_PASS = "root_secret_for_test_only";
-const SIDECAR_PORT = 18_043;
+// Distinct from every other real-surreal acceptance sidecar port (the `node`
+// vitest project runs these files in parallel forks; a shared port makes a
+// second file's `/health` hit the first's live sidecar and re-apply the schema
+// → `DEFINE ACCESS account already exists`). 18_037/39/41/43 belong to the
+// packages/data suites; 18_042/44/45/46/47 to sibling sync suites.
+const SIDECAR_PORT = 18_048;
 const HEALTH_POLL_MS = 100;
 const HEALTH_MAX_ATTEMPTS = 50;
 const SURREAL_NS = "perry";
