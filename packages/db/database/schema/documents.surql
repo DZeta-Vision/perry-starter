@@ -115,6 +115,12 @@ DEFINE FIELD updated_cursor ON document_projection TYPE int;
 -- the perimeter key and range-backs the scoped read of the read-model.
 DEFINE INDEX idx_document_projection_scope_doc ON document_projection FIELDS scope_user_id, doc_id UNIQUE;
 
+-- The RAG vector index: a native HNSW index over the model-tagged embedding so
+-- retrieval is an index-backed KNN (the `<|K,EF|>` operator), never a full-scan.
+-- DIMENSION is fixed per embedding space (the stub model's dimension); a single
+-- index never mixes embedding spaces (the read filters embedding_model too).
+DEFINE INDEX idx_document_projection_embedding ON document_projection FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;
+
 -- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
 -- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim
 -- $auth.role split on ',', never an org-structural role). NO role — not even

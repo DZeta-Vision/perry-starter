@@ -8,7 +8,7 @@ import {
   RUN_STARTED,
   TEXT_MESSAGE_CONTENT,
 } from "../ag-ui-contract";
-import type { AssistantAiSeam } from "../assistant";
+import type { StreamingSeam } from "../proxy";
 import { assertLocaleParity, createAiProxy } from "../proxy";
 import { assembleSystemPrompt, resolveLocale } from "../request-assembly";
 
@@ -21,10 +21,7 @@ import { assembleSystemPrompt, resolveLocale } from "../request-assembly";
 // defaulted leg.
 
 // A seam that records the locale of the request it received.
-const recordingSeam = (
-  frames: AgUiFrame[],
-  sink: string[]
-): AssistantAiSeam => ({
+const recordingSeam = (frames: AgUiFrame[], sink: string[]): StreamingSeam => ({
   async *stream(request: AssistantTurnRequest): AsyncGenerator<AgUiFrame> {
     sink.push(request.locale);
     for (const frame of frames) {

@@ -1,6 +1,7 @@
 import type { AgUiFrame, AssistantTurnRequest } from "./ag-ui-contract";
 import { PROVENANCE_CLOUD, RUN_FINISHED } from "./ag-ui-contract";
 import type { AssistantAiSeam } from "./assistant";
+import { type EmbeddingResult, stubEmbed } from "./embed";
 import { normalizedRunErrorFrame } from "./errors";
 import { readAgUiFrames } from "./upstream-openai";
 
@@ -64,6 +65,13 @@ export const createCloudAssistant = (
         yield emitted;
       }
     }
+  },
+
+  // Compute a document embedding for RAG. Stub (the real model is spike-gated);
+  // the projection's single writer calls this and writes the row — the seam never
+  // writes the projection table.
+  embed(text: string): Promise<EmbeddingResult> {
+    return Promise.resolve(stubEmbed(text));
   },
 });
 

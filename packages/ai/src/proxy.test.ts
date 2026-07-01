@@ -8,10 +8,10 @@ import {
   RUN_STARTED,
   TEXT_MESSAGE_CONTENT,
 } from "./ag-ui-contract";
-import type { AssistantAiSeam } from "./assistant";
+import type { StreamingSeam } from "./proxy";
 import { createAiProxy, reconcileGrowth } from "./proxy";
 
-const seamOf = (frames: AgUiFrame[]): AssistantAiSeam => ({
+const seamOf = (frames: AgUiFrame[]): StreamingSeam => ({
   async *stream(): AsyncGenerator<AgUiFrame> {
     for (const frame of frames) {
       await Promise.resolve();
@@ -81,7 +81,7 @@ test("a user cancel tears the turn down without re-routing and without an error 
     release = resolve;
   });
   const localSpawned: string[] = [];
-  const gatedLocal: AssistantAiSeam = {
+  const gatedLocal: StreamingSeam = {
     async *stream(): AsyncGenerator<AgUiFrame> {
       localSpawned.push("local");
       yield { type: RUN_STARTED, threadId: "t", runId: "r" };
@@ -91,7 +91,7 @@ test("a user cancel tears the turn down without re-routing and without an error 
     },
   };
   const cloudProbe: string[] = [];
-  const watchedCloud: AssistantAiSeam = {
+  const watchedCloud: StreamingSeam = {
     async *stream(): AsyncGenerator<AgUiFrame> {
       cloudProbe.push("cloud");
       await Promise.resolve();

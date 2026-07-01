@@ -1,6 +1,7 @@
 import type { AgUiFrame, AssistantTurnRequest } from "./ag-ui-contract";
 import { PROVENANCE_LOCAL } from "./ag-ui-contract";
 import type { AssistantAiSeam } from "./assistant";
+import { type EmbeddingResult, stubEmbed } from "./embed";
 import { normalizedRunErrorFrame } from "./errors";
 import { assembleSystemPrompt } from "./request-assembly";
 import { emitAgUiFromDeltas } from "./stream-emit";
@@ -72,6 +73,13 @@ export const createLocalAssistant = (
       runId: request.runId,
       provenance: PROVENANCE_LOCAL,
     });
+  },
+
+  // Compute a document embedding for RAG. Stub (the real model is spike-gated);
+  // the projection's single writer calls this and writes the row — the seam never
+  // writes the projection table.
+  embed(text: string): Promise<EmbeddingResult> {
+    return Promise.resolve(stubEmbed(text));
   },
 });
 

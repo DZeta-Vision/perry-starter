@@ -174,11 +174,31 @@ const UNEMBEDDED_MODEL_TAG = "unembedded";
 const asString = (value: unknown): string =>
   typeof value === "string" ? value : "";
 
+// The private-record content encoding (d76): a private/non-mergeable record's
+// content is the whole record snapshot serialized as base64(JSON). This is the
+// canonical encode; `decodePrivateRecord` is the inverse.
+export const encodePrivateRecord = (record: Record<string, unknown>): string =>
+  btoa(JSON.stringify(record));
+
+// Content-validation for the private-record encoding: a payload is valid when it
+// is base64 of a JSON object. Used to assert the encoding is well-formed before
+// it feeds the materializer (which otherwise degrades a bad payload to empty).
+export const isValidPrivateRecordEncoding = (
+  payloadBase64: string
+): boolean => {
+  try {
+    const parsed: unknown = JSON.parse(atob(payloadBase64));
+    return parsed !== null && typeof parsed === "object";
+  } catch {
+    return false;
+  }
+};
+
 // Best-effort decode of a private record's opaque base64 snapshot. Private
 // collections persist the whole record (LWW, no field merge), so the winning
 // delta's payload is the record content. A payload that is not JSON degrades to
 // an empty record rather than throwing.
-const decodePrivateRecord = (
+export const decodePrivateRecord = (
   payloadBase64: string
 ): Record<string, unknown> => {
   try {

@@ -30,9 +30,13 @@ import { normalizedRunErrorFrame } from "./errors";
 // snapshotted once per turn and injected IDENTICALLY on every leg (the same
 // request object), so a failover never switches the answer's language.
 
+// The proxy only needs each leg's streaming surface (never `embed`), so it
+// accepts the streaming subset — any full AssistantAiSeam satisfies it.
+export type StreamingSeam = Pick<AssistantAiSeam, "stream">;
+
 export interface AiProxyDeps {
-  readonly cloud: AssistantAiSeam;
-  readonly local: AssistantAiSeam;
+  readonly cloud: StreamingSeam;
+  readonly local: StreamingSeam;
   // Capability probe: true → the device is capable, try local first (cloud is the
   // failover); default false → route straight to the always-available cloud.
   readonly probe?: () => boolean;
@@ -49,7 +53,7 @@ export interface ProxyTurnInput {
 
 interface Leg {
   readonly locus: InferenceProvenance;
-  readonly seam: AssistantAiSeam;
+  readonly seam: StreamingSeam;
 }
 
 // Prefix-reconcile: given the text already shown and a leg's cumulative text,

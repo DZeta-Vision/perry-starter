@@ -9,7 +9,7 @@ import {
   TEXT_MESSAGE_CONTENT,
   TEXT_MESSAGE_START,
 } from "../ag-ui-contract";
-import type { AssistantAiSeam } from "../assistant";
+import type { StreamingSeam } from "../proxy";
 import { checkSplice, createAiProxy } from "../proxy";
 
 // Conformance gate for the mid-session failover splice.
@@ -20,7 +20,7 @@ import { checkSplice, createAiProxy } from "../proxy";
 // (no prefix retraction, no duplicated tokens at the cut). The twin proves the
 // check goes red on a second start / a re-opened run / a retracting delta.
 
-const seamOf = (frames: AgUiFrame[]): AssistantAiSeam => ({
+const seamOf = (frames: AgUiFrame[]): StreamingSeam => ({
   async *stream(): AsyncGenerator<AgUiFrame> {
     for (const frame of frames) {
       await Promise.resolve();
