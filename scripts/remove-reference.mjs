@@ -10,13 +10,17 @@
 //      canonical shapes (documents being one of them) so their coverage of the
 //      SURVIVING shapes is preserved rather than thrown away.
 //   2. DELETE the entity's own modules (the db `documents` export, the data
-//      store impls, the daemon reference read route).
+//      store impls, the daemon reference read route) AND the `apps/web`
+//      documents surface that exists only to exercise the entity (the
+//      `/documents` route, the `components/documents/` UI directory, the
+//      `e2e/documents/` flow, and the documents-only freshness-indicator seam
+//      guard).
 //   3. EDIT the producers: drop the `documents` package exports, strip the
 //      SurrealQL `documents`/`document_delta` tables (the credential/access
 //      perimeter is preserved), empty the collaboration-mode registry, and
 //      un-wire the daemon read route + the schema-doc reference.
-//   4. SWEEP every remaining test / fixture that still references the documents
-//      family — these exist only to exercise the removed entity.
+//   4. SWEEP every remaining test / fixture / spec that still references the
+//      documents family — these exist only to exercise the removed entity.
 //
 // Dependency-free: node builtins only. Each step is guarded so it is safe to
 // re-run.
@@ -73,6 +77,26 @@ const CORE_DELETIONS = [
   "packages/data/src/documents.local.ts",
   "packages/data/src/documents.cloud.ts",
   "apps/daemon/src/documents-read.ts",
+];
+
+// Step 2 (cont.) — the `apps/web` documents surface. These files/dirs exist
+// ONLY to exercise the documents entity (the user-facing realization of the
+// reference entity), so they are removed with the entity rather than swept:
+//   - the `/documents` route is a product SOURCE route (not a test/fixture), so
+//     the consumer sweep never touches it — it must be deleted outright;
+//   - `components/documents/` and `e2e/documents/` are wholly documents-specific
+//     directories (list/editor/freshness/offline UI + the offline-sync flow);
+//   - the freshness-indicator seam guard is a documents-only source guard that
+//     reads the (now-removed) `components/documents/freshness-indicator.tsx`.
+// The generic connectivity store (`lib/offline-store.ts`) and the generic CRDT
+// editor lib (`lib/crdt/`) are NOT documents-entity references, so they stay.
+const WEB_FILE_DELETIONS = [
+  "apps/web/src/routes/documents.tsx",
+  "apps/web/src/conformance/freshness-indicator-seam.test.ts",
+];
+const WEB_DIR_DELETIONS = [
+  "apps/web/src/components/documents",
+  "apps/web/e2e/documents",
 ];
 
 // Step 3 — producer edits.
@@ -158,6 +182,17 @@ const deleteFiles = (root, rels) => {
   }
 };
 
+// Recursive directory removal (node builtin `rmSync` with `recursive`). Guarded
+// by existsSync so re-runs on an already-removed tree are a no-op.
+const deleteDirs = (root, rels) => {
+  for (const rel of rels) {
+    const path = join(root, rel);
+    if (existsSync(path)) {
+      rmSync(path, { recursive: true, force: true });
+    }
+  }
+};
+
 const dropExports = (root, rel, keys) => {
   const path = join(root, rel);
   if (!existsSync(path)) {
@@ -234,8 +269,14 @@ const unwireDaemon = (root) => {
   writeFileSync(path, text);
 };
 
+// A consumer is sweepable when it is a test (`.test.ts`), a Playwright spec
+// (`.spec.ts`), or a fixture — the file classes that exist only to exercise an
+// entity. Extending to `.spec.ts` catches a documents `.spec.ts` consumer
+// generically (anywhere in the tree), not only via the explicit dir deletion.
 const isSweepable = (path) =>
-  path.endsWith(".test.ts") || path.includes(`${"__fixtures__"}/`);
+  path.endsWith(".test.ts") ||
+  path.endsWith(".spec.ts") ||
+  path.includes(`${"__fixtures__"}/`);
 
 const referencesEntity = (text) =>
   DOC_REFERENCE_PATTERNS.some((pattern) => pattern.test(text));
@@ -269,6 +310,8 @@ const main = () => {
     editFile(root, file, edits);
   }
   deleteFiles(root, CORE_DELETIONS);
+  deleteFiles(root, WEB_FILE_DELETIONS);
+  deleteDirs(root, WEB_DIR_DELETIONS);
   dropExports(root, "packages/db/package.json", DB_EXPORTS_TO_DROP);
   dropExports(root, "packages/data/package.json", DATA_EXPORTS_TO_DROP);
   stripSchema(root);

@@ -70,10 +70,16 @@ const PERMISSIONS_FULL_RE = /\bPERMISSIONS\s+FULL\b/i;
 const PERMISSIONS_NONE_RE = /\bPERMISSIONS\s+NONE\b/i;
 const AUTH_REF_RE = /\$auth\b/i;
 
-// Owner-data tables must scope to the authenticated record; the credential table
-// and the delta-log must be fully denied to record-access sessions.
+// Owner-data tables must scope to the authenticated record; the credential table,
+// the delta-log, and the materialized projection must be fully denied to
+// record-access sessions (the delta-log and the projection are the two copies the
+// cross-scope perimeter seals so a scoped session reads zero rows directly).
 const OWNER_SCOPED_TABLES = ["documents"] as const;
-const SEALED_TABLES = ["user", "document_delta"] as const;
+const SEALED_TABLES = [
+  "user",
+  "document_delta",
+  "document_projection",
+] as const;
 
 interface TableBlock {
   readonly body: string;
@@ -192,7 +198,7 @@ describe("the local store's security invariants hold at the source/schema layer"
     expect(findSdkImports(read(LOCAL_FILE))).toEqual([]);
   });
 
-  test("every schema table declares explicit row-level PERMISSIONS — owner-data $auth-scoped, credential + delta-log sealed NONE, none default open", () => {
+  test("every schema table declares explicit row-level PERMISSIONS — owner-data $auth-scoped, credential + delta-log + projection sealed NONE, none default open", () => {
     expect(findSchemaViolations(read(SCHEMA_FILE))).toEqual([]);
   });
 

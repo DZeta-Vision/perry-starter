@@ -79,6 +79,7 @@
         "@hugeicons/react": "^1.1.7",
         "@perry-starter/api": "workspace:*",
         "@perry-starter/env": "workspace:*",
+        "@perry-starter/sync": "workspace:*",
         "@react-email/components": "^1.0.12",
         "@sentry/node": "^10.59.0",
         "@sentry/profiling-node": "^10.59.0",
@@ -102,6 +103,7 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "dotenv": "catalog:",
+        "loro-crdt": "1.13.6",
         "motion": "^12.40.0",
         "next-themes": "^0.4.6",
         "pino": "^10.3.1",
@@ -258,6 +260,20 @@
         "@perry-starter/config": "workspace:*",
         "alchemy": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "packages/sync": {
+      "name": "@perry-starter/sync",
+      "version": "0.0.0",
+      "dependencies": {
+        "@perry-starter/api": "workspace:*",
+        "@perry-starter/db": "workspace:*",
+      },
+      "devDependencies": {
+        "@perry-starter/config": "workspace:*",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
       },
     },
   },
@@ -757,6 +773,8 @@
     "@perry-starter/env": ["@perry-starter/env@workspace:packages/env"],
 
     "@perry-starter/infra": ["@perry-starter/infra@workspace:packages/infra"],
+
+    "@perry-starter/sync": ["@perry-starter/sync@workspace:packages/sync"],
 
     "@perry-starter/worker": ["@perry-starter/worker@workspace:apps/worker"],
 
@@ -1849,6 +1867,8 @@
     "loglevel": ["loglevel@1.9.2", "", {}, "sha512-HgMmCqIJSAKqo68l0rS2AanEWfkxaZ5wNiEFb5ggm08lDs9Xl2KxBlX3PTcaD2chBM1gXAYf491/M2Rv8Jwayg=="],
 
     "longest-streak": ["longest-streak@3.1.0", "", {}, "sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g=="],
+
+    "loro-crdt": ["loro-crdt@1.13.6", "", {}, "sha512-OsnKW64J+1XdCMafAqR+aASn/wQEgDzwcDwu6dDOVSxxbLPFgnU6LX8ja+hd5PnEcT+kuz9eXSagvlYXsRbQIw=="],
 
     "lru-cache": ["lru-cache@11.5.1", "", {}, "sha512-RPimw/7aMdv2oqRrxKwvZXcPfwBrn/JZ2xYcY9Hus/6LaS3VOAKVWKWgNLCFSiOm1ESXinjsDlidVU7JlnCN2A=="],
 

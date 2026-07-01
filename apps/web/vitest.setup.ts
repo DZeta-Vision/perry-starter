@@ -35,6 +35,40 @@ if (!window.matchMedia) {
     }) as unknown as MediaQueryList;
 }
 
+// jsdom has no layout engine, so every element reports offsetWidth/offsetHeight
+// as 0. @tanstack/react-virtual measures its scroll viewport from those offsets
+// and renders an EMPTY window when the viewport measures 0 — so a virtualized
+// list would materialize no rows under jsdom. Give elements a non-zero offset
+// size and a no-op ResizeObserver so virtualized lists materialize a real
+// window in component tests (text/role-query tests are unaffected — jest-dom's
+// visibility check does not read offsets).
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class {
+    observe() {
+      return;
+    }
+    unobserve() {
+      return;
+    }
+    disconnect() {
+      return;
+    }
+  } as unknown as typeof ResizeObserver;
+}
+const OFFSET_SIZES = [
+  ["offsetHeight", 600],
+  ["offsetWidth", 800],
+] as const;
+for (const [prop, value] of OFFSET_SIZES) {
+  // jsdom already defines these as getters returning 0; redefine unconditionally.
+  Object.defineProperty(HTMLElement.prototype, prop, {
+    configurable: true,
+    get() {
+      return value;
+    },
+  });
+}
+
 // Component tests render shell chrome without a RouterProvider; stub the router
 // primitives so a component can be unit-tested in isolation (real navigation is
 // covered by the e2e suite).

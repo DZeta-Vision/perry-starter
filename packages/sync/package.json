@@ -1,0 +1,24 @@
+{
+  "name": "@perry-starter/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sync-status": "./src/sync-status.ts",
+    "./sync-status-view": "./src/sync-status-view.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@perry-starter/api": "workspace:*",
+    "@perry-starter/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@perry-starter/config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

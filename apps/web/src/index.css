@@ -20,6 +20,11 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.58 0.22 27);
+  /* Muted freshness foreground for the up-to-date / syncing sync states.
+     Deliberately NOT the teal brand (--primary): a sync state is never
+     signalled by the brand hue or by colour alone (a text label always
+     accompanies it). "May be out of date" uses the low-emphasis --destructive. */
+  --freshness-fg: oklch(0.556 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.64 0 0);
@@ -55,6 +60,7 @@
   --accent: oklch(0.371 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --freshness-fg: oklch(0.708 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

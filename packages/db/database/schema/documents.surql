@@ -63,13 +63,57 @@ DEFINE FIELD updated_at ON documents TYPE datetime VALUE time::now();
 
 -- The delta-log table is sealed: it grants no access to record-access sessions
 -- at all. The cross-scope isolation perimeter over this table is enforced
--- server-side later; here it is only shaped as fully denied.
+-- server-side later; here it is only shaped as fully denied. It is anchored to
+-- the document (doc_id), append-only, and dedup-safe on the client-minted op-id.
 DEFINE TABLE document_delta SCHEMAFULL PERMISSIONS NONE;
 
 DEFINE FIELD scope_user_id ON document_delta TYPE string;
 DEFINE FIELD doc_id ON document_delta TYPE string;
-DEFINE FIELD cursor ON document_delta TYPE int;
+-- The client-minted ULID op-id, carried as a field and pinned UNIQUE below so a
+-- replayed op converges to a single row (idempotent dedup at the table layer).
+-- The record id is also the op-id (document_delta:<ulid>), so an UPSERT replay
+-- updates in place; the UNIQUE index additionally forbids a different record id
+-- from reusing the same op-id.
+DEFINE FIELD op_id ON document_delta TYPE string;
+-- The document schema version travels with every delta so a reader can detect an
+-- envelope minted under a drifted/incompatible document shape.
+DEFINE FIELD doc_schema_version ON document_delta TYPE int;
+-- The server-assigned monotonic per-(collection, scope) cursor — transport and
+-- keyset ordering only, never a client clock and never the ULID. OPTIONAL on the
+-- row because it does not exist until the server mints it from the named sequence
+-- at ingest; an as-yet-unminted delta carries no cursor.
+DEFINE FIELD cursor ON document_delta TYPE option<int>;
 DEFINE FIELD payload ON document_delta TYPE string;
+
+-- Idempotent-replay dedup: a duplicate op-id can never create a second row.
+DEFINE INDEX idx_document_delta_op_id ON document_delta FIELDS op_id UNIQUE;
+-- The trailing (scope_user_id, cursor) composite range index range-backs the
+-- since-cursor keyset pull (WHERE scope_user_id = $s AND cursor > $since ORDER BY
+-- cursor ASC) at a cost proportional to the number of new deltas — never an
+-- OFFSET/START deep-page and never a full table scan.
+DEFINE INDEX idx_document_delta_scope_cursor ON document_delta FIELDS scope_user_id, cursor;
+
+-- The materialized read-model projection — the THIRD copy of delta data the
+-- cross-scope isolation perimeter must cover, alongside the cloud log and the
+-- local store. Sealed PERMISSIONS NONE exactly like the delta-log: a record-access
+-- session reads zero rows directly (defense in depth), and the only perimeter over
+-- it is the server-derived scope_user_id the privileged forwarder constrains on. A
+-- single owning writer (the browser projection writer) owns every column including
+-- the model-tagged embedding (so one index never mixes embedding spaces);
+-- updated_cursor is the server-assigned integer the read-model advances on.
+DEFINE TABLE document_projection SCHEMAFULL PERMISSIONS NONE;
+
+DEFINE FIELD scope_user_id ON document_projection TYPE string;
+DEFINE FIELD doc_id ON document_projection TYPE string;
+DEFINE FIELD title ON document_projection TYPE string DEFAULT '';
+DEFINE FIELD body_preview ON document_projection TYPE string DEFAULT '';
+DEFINE FIELD embedding ON document_projection TYPE option<array<float>>;
+DEFINE FIELD embedding_model ON document_projection TYPE string DEFAULT 'unset';
+DEFINE FIELD updated_cursor ON document_projection TYPE int;
+
+-- One projection row per (scope, document); the server-derived scope_user_id is
+-- the perimeter key and range-backs the scoped read of the read-model.
+DEFINE INDEX idx_document_projection_scope_doc ON document_projection FIELDS scope_user_id, doc_id UNIQUE;
 
 -- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
 -- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim
