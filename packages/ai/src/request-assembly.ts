@@ -26,7 +26,7 @@ export const assembleSystemPrompt = (request: AssistantTurnRequest): string => {
   const context = request.retrievedContext ?? [];
   if (context.length > 0) {
     lines.push(
-      "Ground your answer in the following retrieved context from the user's own local documents:"
+      "Ground your answer in the retrieved passages below, drawn from the user's own local files."
     );
     for (const passage of context) {
       lines.push(`- ${passage}`);

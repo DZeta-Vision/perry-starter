@@ -77,6 +77,7 @@
         "@fontsource-variable/inter": "^5.2.8",
         "@hugeicons/core-free-icons": "^4.2.1",
         "@hugeicons/react": "^1.1.7",
+        "@perry-starter/ai": "workspace:*",
         "@perry-starter/api": "workspace:*",
         "@perry-starter/env": "workspace:*",
         "@perry-starter/sync": "workspace:*",
