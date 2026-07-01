@@ -165,7 +165,9 @@
       "name": "@perry-starter/ai",
       "version": "0.0.0",
       "devDependencies": {
+        "@ag-ui/core": "0.0.52",
         "@perry-starter/config": "workspace:*",
+        "@tanstack/ai": "0.32.0",
         "typescript": "catalog:",
       },
     },

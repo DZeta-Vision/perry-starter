@@ -11,13 +11,16 @@
     },
     "./assistant": "./src/assistant.ts",
     "./assistant.local": "./src/assistant.local.ts",
-    "./assistant.cloud": "./src/assistant.cloud.ts"
+    "./assistant.cloud": "./src/assistant.cloud.ts",
+    "./contract": "./src/ag-ui-contract.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
+    "@ag-ui/core": "0.0.52",
     "@perry-starter/config": "workspace:*",
+    "@tanstack/ai": "0.32.0",
     "typescript": "catalog:"
   }
 }
