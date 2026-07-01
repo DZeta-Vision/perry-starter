@@ -12,7 +12,11 @@
     "./assistant": "./src/assistant.ts",
     "./assistant.local": "./src/assistant.local.ts",
     "./assistant.cloud": "./src/assistant.cloud.ts",
-    "./contract": "./src/ag-ui-contract.ts"
+    "./contract": "./src/ag-ui-contract.ts",
+    "./request-assembly": "./src/request-assembly.ts",
+    "./stream-emit": "./src/stream-emit.ts",
+    "./upstream-openai": "./src/upstream-openai.ts",
+    "./errors": "./src/errors.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"

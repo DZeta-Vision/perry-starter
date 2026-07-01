@@ -5,7 +5,7 @@
 // HAND-DEFINED on purpose: the upstream generative-streaming SDK and its event
 // schema bundle are foreclosed in the Perry daemon build (they ship prebuilt JS
 // and pull a runtime schema library — an in-process bundle the daemon cannot
-// link, per AD-3). So the daemon hand-emits these frames as strings, and the CI
+// link). So the daemon hand-emits these frames as strings, and the CI
 // conformance gate (which runs in full Node, where the bundle is legal) parses
 // every hand-emitted frame against the real upstream schemas. This module names
 // no foreclosed package specifier, so it stays clean under the tier-boundary
@@ -235,13 +235,13 @@ export const parseRunAgentInput = (body: unknown): RunAgentInput => {
 // --- Normalized turn request (the one shared request-assembly input) ---
 // Both AI legs (local sidecar, cloud floor) are driven from this one normalized
 // shape so the locale and the retrieved RAG context are injected identically on
-// each leg by one shared assembly function. The routing proxy (Story 4.5) selects
+// each leg by one shared assembly function. The routing proxy selects
 // the leg; this is the provider-agnostic request every leg receives.
 export interface AssistantTurnRequest {
   // Snapshotted once per turn; injected identically on every leg.
   readonly locale: LocaleDirective;
   readonly prompt: string;
-  // Retrieved local-document context (Story 4.6 RAG), injected identically.
+  // Retrieved local-document context (RAG), injected identically.
   readonly retrievedContext?: readonly string[];
   readonly runId: string;
   readonly threadId: string;

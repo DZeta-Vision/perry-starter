@@ -22,7 +22,7 @@ import {
   TOOL_CALL_START,
 } from "../ag-ui-contract";
 
-// AD-17 AG-UI event-subset conformance gate.
+// AG-UI event-subset conformance gate.
 //
 // This runs in the CI/Node tier (NOT the daemon binary), the ONE place the
 // upstream event schema bundle may be imported. It proves the hand-emitted

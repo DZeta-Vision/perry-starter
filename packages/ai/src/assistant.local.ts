@@ -1,19 +1,24 @@
-import type { AssistantAiSeam, AssistantReply } from "./assistant";
+import type { AgUiFrame, AssistantTurnRequest } from "./ag-ui-contract";
+import type { AssistantAiSeam } from "./assistant";
+import { normalizedRunErrorFrame } from "./errors";
 
-// Local-sidecar implementation of the AI seam. Shape-only stub for now: the
-// concrete local llama-server implementation lands later. Method bodies throw
-// until then; both targets expose the identical method surface.
-const NOT_IMPLEMENTED =
-  "assistant AI seam (local-sidecar) is not implemented yet";
+// Local-sidecar implementation of the AI seam. The concrete llama-server leg
+// (spawn the loopback sidecar, consume its OpenAI-compatible stream via native
+// fetch, hand-emit the AG-UI subset) lands later; until then this exposes
+// the identical `stream` shape so the seam compiles for both targets, and it
+// degrades honestly to the normalized terminal error rather than throwing. No
+// in-process model SDK/WASM enters this module.
 
-export const assistant = {
-  complete(): Promise<AssistantReply> {
-    throw new Error(NOT_IMPLEMENTED);
+export const createLocalAssistant = (): AssistantAiSeam => ({
+  // biome-ignore lint/suspicious/useAwait: placeholder generator; the real local leg awaits reader.read().
+  async *stream(_request: AssistantTurnRequest): AsyncGenerator<AgUiFrame> {
+    yield normalizedRunErrorFrame(
+      new Error("local llama-server leg not wired")
+    );
   },
-  summarize(): Promise<AssistantReply> {
-    throw new Error(NOT_IMPLEMENTED);
-  },
-} satisfies AssistantAiSeam;
+});
+
+export const assistant: AssistantAiSeam = createLocalAssistant();
 
 // Resolution sentinel: tells the build-time seam which implementation resolved.
 export const __IMPL__ = "local" as const;
