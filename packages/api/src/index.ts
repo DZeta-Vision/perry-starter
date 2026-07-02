@@ -7,6 +7,11 @@ import {
   resolveGlobalRoles,
   roles,
 } from "@perry-starter/auth/rbac";
+import {
+  evaluateCredentialChain,
+  TWO_FACTOR_CHALLENGE_PATH,
+  TWO_FACTOR_ENROL_PATH,
+} from "@perry-starter/auth/two-factor-enrolment";
 import { initTRPC, TRPCError } from "@trpc/server";
 
 import type { Context } from "./context";
@@ -220,3 +225,80 @@ const forcedChangeRouter = tForcedChange.router({
 // directly (no network), mirroring the cross-user-read caller.
 export const createForcedChangeCaller = (ctx: ForcedChangeContext) =>
   forcedChangeRouter.createCaller(ctx);
+
+// --- The mandatory-2FA credential-chain gate middleware ----------------------
+//
+// After a forced password change, an admin/superadmin is deterministically chained
+// through mandatory TOTP enrolment: NO admin/superadmin can reach a privileged op
+// without 2FA. The ordered, non-dismissable chain (PASSWORD_CHANGE_REQUIRED ->
+// forced TOTP enrol -> allow) is the pure decision in @perry-starter/auth; this
+// leg binds it to the session and carries the precise gate code in shape.data.code
+// (TWO_FACTOR_REQUIRED / PASSWORD_CHANGE_REQUIRED are NOT native tRPC codes). Each
+// gate leaves exactly ONE forward path open, so an admin is driven to enrolment
+// but can never skip a step to operate.
+
+interface CredentialChainContext {
+  readonly session: {
+    readonly user: {
+      readonly id: string;
+      readonly role: string;
+      readonly requirePasswordChange: boolean;
+      readonly twoFactorEnrolled: boolean;
+    };
+  } | null;
+}
+
+const tCredentialChain = initTRPC.context<CredentialChainContext>().create({
+  errorFormatter: ({ shape, error }) => ({
+    ...shape,
+    data: { ...shape.data, code: adCodeForError(error) ?? shape.data.code },
+  }),
+});
+
+const credentialChainProcedure = (gatePath: string) =>
+  tCredentialChain.procedure.use(({ ctx, next }) => {
+    if (!ctx.session) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+      });
+    }
+    const verdict = evaluateCredentialChain({
+      path: gatePath,
+      requirePasswordChange: ctx.session.user.requirePasswordChange,
+      roleClaim: ctx.session.user.role,
+      twoFactorEnrolled: ctx.session.user.twoFactorEnrolled,
+    });
+    if (!verdict.allow) {
+      throw new TRPCError({
+        cause: { code: verdict.gate },
+        code: "FORBIDDEN",
+        message: "Credential enrolment required before this operation",
+      });
+    }
+    return next();
+  });
+
+const credentialChainRouter = tCredentialChain.router({
+  // The forced-change forward path — permitted only while a password change is owed.
+  changePassword: credentialChainProcedure(CHANGE_PASSWORD_PATH).mutation(
+    () => ({ changed: true })
+  ),
+  // The mandatory-TOTP forward paths — the only ops open while TWO_FACTOR_REQUIRED.
+  enrolTwoFactor: credentialChainProcedure(TWO_FACTOR_ENROL_PATH).mutation(
+    () => ({ enrolled: true })
+  ),
+  verifyTwoFactor: credentialChainProcedure(TWO_FACTOR_CHALLENGE_PATH).mutation(
+    () => ({ verified: true })
+  ),
+  // A representative privileged op — refused for an admin/superadmin until the
+  // full chain (password change + TOTP enrolment) is satisfied.
+  listUsers: credentialChainProcedure("admin.listUsers").query(() => ({
+    users: [] as const,
+  })),
+});
+
+// In-process caller exercising the credential-chain middleware's deny/allow
+// decision directly (no network).
+export const createCredentialChainCaller = (ctx: CredentialChainContext) =>
+  credentialChainRouter.createCaller(ctx);

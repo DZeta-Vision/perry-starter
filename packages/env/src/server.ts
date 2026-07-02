@@ -36,6 +36,11 @@ const serverEnvShape = {
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.url(),
   CORS_ORIGIN: z.url(),
+  // The identity the idempotent superadmin seed creates when a system has no
+  // superadmin. A defaulted env knob (operator-tunable): absent → the local
+  // default, so a boot never fails for want of it. Consumed only by the cloud
+  // authority's seed step.
+  SUPERADMIN_EMAIL: z.email().default("superadmin@perry-starter.local"),
   // Server-side OAuth provider credentials, consumed by the cloud better-auth
   // authority. Optional on the contract: only the cloud-authority host carries
   // them, so the relay tier (which holds none) still validates at boot.

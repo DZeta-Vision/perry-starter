@@ -370,6 +370,14 @@ const createAuthorityContext = () => {
       ...row,
     }));
 
+  // Seed a raw verification row directly (bypassing the auth handler), so a test
+  // can materialize a NON-reset user-keyed row — e.g. a two-factor enrolment
+  // marker under the `two-factor:<userId>` namespace — and prove a subsequent
+  // reset-token invalidation leaves it intact.
+  const seedVerificationRow = (row: Record<string, unknown>): void => {
+    (db.verification as Record<string, unknown>[]).push({ ...row });
+  };
+
   return {
     auditActions: () => audits.slice(),
     authority,
@@ -379,6 +387,7 @@ const createAuthorityContext = () => {
     organizationById,
     requestPasswordReset,
     resetPassword,
+    seedVerificationRow,
     sentEmails: () => emails.slice(),
     sentResetEmails: () => resetEmails.slice(),
     signIn,
@@ -402,6 +411,7 @@ export const createTestAuthority = () => {
     organizationById: ctx.organizationById,
     requestPasswordReset: ctx.requestPasswordReset,
     resetPassword: ctx.resetPassword,
+    seedVerificationRow: ctx.seedVerificationRow,
     sentEmails: ctx.sentEmails,
     sentResetEmails: ctx.sentResetEmails,
     signIn: ctx.signIn,

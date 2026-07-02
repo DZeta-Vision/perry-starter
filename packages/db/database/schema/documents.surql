@@ -174,3 +174,22 @@ DEFINE FIELD timestamp ON audit_log TYPE datetime DEFAULT time::now() READONLY;
 -- id (WHERE id > $cursor ORDER BY id LIMIT $n), never an OFFSET/START deep page. The
 -- timestamp index backs range-scoped retention queries.
 DEFINE INDEX idx_audit_log_timestamp ON audit_log FIELDS timestamp;
+
+-- Break-glass recovery codes. The table is SEALED (PERMISSIONS NONE): no
+-- record-access session — not even the code's owner — may read or mutate a row
+-- directly. Generation and single-use consumption run in the privileged
+-- system/superadmin-gated forwarder that bypasses row PERMISSIONS (mirroring the
+-- audit-write path), so a scoped session can never read a hash, forge a code, or
+-- flip `used_at`. Codes are stored ONLY as PBKDF2 hashes (never plaintext); a
+-- consume marks `used_at` once, so a replayed/spent code can never be re-used.
+DEFINE TABLE recovery_code SCHEMAFULL PERMISSIONS NONE;
+
+-- The code hash (never the plaintext code). The spend timestamp is null until the
+-- code is consumed single-use; the owning user reference scopes a user's set.
+DEFINE FIELD hashed_code ON recovery_code TYPE string;
+DEFINE FIELD used_at ON recovery_code TYPE option<datetime>;
+DEFINE FIELD user_ref ON recovery_code TYPE record<user>;
+
+-- Range-back the per-user recovery-code read (the consume scans a user's unused
+-- codes); never a full-table scan.
+DEFINE INDEX idx_recovery_code_user ON recovery_code FIELDS user_ref;

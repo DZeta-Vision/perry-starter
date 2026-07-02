@@ -144,8 +144,10 @@ export function NoAccess({ onForward }: { onForward?: () => void }) {
 // forward path (back to sign in).
 export function TwoFactorPlaceholder({
   onForward,
+  children,
 }: {
   onForward?: () => void;
+  children?: React.ReactNode;
 }) {
   const locale = useLocaleStore((state) => state.locale);
   return (
@@ -154,6 +156,7 @@ export function TwoFactorPlaceholder({
       title={tAuth(locale, "auth.error.TWO_FACTOR_REQUIRED")}
       treatment="two-factor"
     >
+      {children}
       <ForwardToSignIn onForward={onForward} />
     </AuthSurface>
   );

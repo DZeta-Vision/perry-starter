@@ -45,6 +45,7 @@ type AuthStringKey =
   | "auth.language.toggle"
   | "auth.verify.resend"
   | "auth.locked.action"
+  | "auth.twoFactor.codeLabel"
   | "auth.forward.backToSignIn";
 
 const EN: Record<AuthStringKey, string> = {
@@ -89,6 +90,7 @@ const EN: Record<AuthStringKey, string> = {
   "auth.language.toggle": "Language",
   "auth.verify.resend": "Resend the link",
   "auth.locked.action": "Continue",
+  "auth.twoFactor.codeLabel": "Authentication code",
   "auth.forward.backToSignIn": "Back to sign in",
 };
 
@@ -137,6 +139,7 @@ const FR: Record<AuthStringKey, string> = {
   "auth.language.toggle": "Langue",
   "auth.verify.resend": "Renvoyer le lien",
   "auth.locked.action": "Continuer",
+  "auth.twoFactor.codeLabel": "Code d'authentification",
   "auth.forward.backToSignIn": "Retour à la connexion",
 };
 
