@@ -45,8 +45,30 @@ DEFINE FIELD pass ON user TYPE string;
 -- and defaulting to the lowest tier. This is the claim the row-level PERMISSIONS
 -- read as $auth.role — distinct from any org-structural role.
 DEFINE FIELD role ON user TYPE string DEFAULT 'member';
+-- The single-sourced reversible-deactivate state (active|deactivated). A
+-- deactivate is a SOFT flip of this field, never a row DELETE, so a deactivated
+-- account is fully recoverable by flipping it back to 'active'. Defaults to
+-- 'active' so a freshly registered account is enabled.
+DEFINE FIELD status ON user TYPE string DEFAULT 'active';
+-- The keyset sort key: server-stamped, immutable, monotonic-per-insert creation
+-- time. The admin user list keysets on this (newest-first) rather than deep-paging
+-- with OFFSET/START.
+DEFINE FIELD created_at ON user TYPE datetime DEFAULT time::now() READONLY;
+-- Last-active and inviter are optional list filters; unset until the host stamps
+-- them (an as-yet-inactive or self-registered account carries neither).
+DEFINE FIELD last_active ON user TYPE option<datetime>;
+DEFINE FIELD invited_by ON user TYPE option<string>;
 
 DEFINE INDEX user_email ON user FIELDS email UNIQUE;
+
+-- Keyset read indexes. The admin user list pulls `WHERE [status = $s AND]
+-- created_at < $cursor ORDER BY created_at DESC LIMIT $n` — an index-backed range
+-- walk, never an OFFSET/START deep-page and never a TableScan. The single-field
+-- index backs the unfiltered keyset; the trailing composite backs the
+-- status-scoped keyset (the equality-lead + range shape the query planner covers
+-- with an IndexScan).
+DEFINE INDEX idx_user_created ON user FIELDS created_at;
+DEFINE INDEX idx_user_status_created ON user FIELDS status, created_at;
 
 -- The documents entity. Owned by the authenticated record; only the owner may
 -- read or write their own rows. No table or field is left defaulting open.

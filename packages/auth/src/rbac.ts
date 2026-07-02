@@ -130,3 +130,17 @@ const holdsSetRole = (tier: Tier): boolean =>
 // self-elevation: a requester can never grant a tier at or above its own.
 export const canAssignRole = (requester: Tier, target: Tier): boolean =>
   holdsSetRole(requester) && APP_ROLE_RANK[target] < APP_ROLE_RANK[requester];
+
+// The tiers the ONE matrix grants the superadmin-only `user:set-role` capability
+// (superadmin only). Derived from the matrix, never a hand-typed 'superadmin'
+// literal — the tRPC role-change gate reads this set so it can never sanction a
+// role-assigner the matrix does not, and the row leg below projects the SAME set.
+export const roleAssignmentTiers = (): Tier[] => TIERS.filter(holdsSetRole);
+
+// The SurrealDB row-level PERMISSIONS escalation predicate for role assignment:
+// keyed on the GLOBAL role claim ($auth.role split on ','), it admits ONLY a tier
+// holding `user:set-role` (superadmin). This is the second (DB) leg of the
+// two-layer superadmin-only role-assignment authority — generated from the SAME
+// matrix as the tRPC leg, so the role-parity gate proves they cannot drift.
+export const roleAssignmentEscalationPredicate = (): string =>
+  escalationPredicateFor(roleAssignmentTiers());

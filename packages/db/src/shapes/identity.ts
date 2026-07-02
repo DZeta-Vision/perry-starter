@@ -34,14 +34,30 @@ export const APP_ROLE_RANK = {
 
 export type AppRole = z.infer<typeof appRoleSchema>;
 
-// The canonical persisted user row. `role` is the GLOBAL app-authz role; the
-// additionalFields ride alongside the core identity columns.
+// The single-sourced account status. A deactivate is a SOFT, reversible flip to
+// `deactivated` (never a hard delete); a reactivate flips it back to `active`.
+// This field lives HERE and nowhere else — every consumer (the admin surface,
+// the sealed-`user` column, the list projection) imports it, so the
+// active/deactivated state cannot fork across the wire, the store, and the UI.
+export const userStatusSchema = z.enum(["active", "deactivated"]);
+
+// The resolved default status, single-sourced so a fresh account is active and
+// the sealed-table column default agrees with the shape.
+export const USER_STATUS_DEFAULT = "active" as const;
+
+export type UserStatus = z.infer<typeof userStatusSchema>;
+
+// The canonical persisted user row. `role` is the GLOBAL app-authz role; `status`
+// is the reversible-deactivate state; the additionalFields ride alongside the
+// core identity columns. A row minted before the status column existed parses as
+// `active` (the default), so the field is additive and never rejects a legacy row.
 export const userSchema = z.object({
   id: z.string().min(1),
   email: z.email(),
   emailVerified: z.boolean(),
   name: z.string().optional(),
   role: appRoleSchema,
+  status: userStatusSchema.default(USER_STATUS_DEFAULT),
   locale: localeSchema,
   given_name: z.string().min(1),
   family_name: z.string().min(1),
