@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 
+import { StepUpModal } from "@/components/auth/step-up-modal";
 import SignInForm from "@/components/sign-in-form";
 import { Button } from "@/components/ui/button";
 import type { AuthTreatment } from "@/lib/auth-error";
@@ -162,18 +163,12 @@ export function TwoFactorPlaceholder({
   );
 }
 
-// STEP_UP_REQUIRED -> a DEFINED placeholder step-up route (D6), rendered as a
-// single surface (never a dialog over a dialog). Non-keyboard-trap, with a
-// forward path. The backend lands in Epic 5.
-export function StepUpPlaceholder({ onForward }: { onForward?: () => void }) {
-  const locale = useLocaleStore((state) => state.locale);
-  return (
-    <AuthSurface
-      body={tAuth(locale, "auth.error.STEP_UP_REQUIRED")}
-      title={tAuth(locale, "auth.error.STEP_UP_REQUIRED")}
-      treatment="step-up"
-    >
-      <ForwardToSignIn onForward={onForward} />
-    </AuthSurface>
-  );
+// STEP_UP_REQUIRED -> the real per-action step-up surface, rendered as a SINGLE
+// modal over the surface (never a dialog over a dialog). It is cancelable — cancel
+// aborts ONLY the action (routed to the surface's forward path), never the session.
+// The full pause/resume flow (resume-exactly-where-stopped) is driven by the
+// step-up controller + the modal at the mutation call site; here the modal is the
+// standalone treatment for a direct step-up navigation, so confirm/cancel forward.
+export function StepUpSurface({ onForward }: { onForward?: () => void }) {
+  return <StepUpModal onCancel={onForward} onConfirm={onForward} />;
 }

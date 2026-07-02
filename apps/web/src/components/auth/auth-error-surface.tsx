@@ -4,7 +4,7 @@ import {
   NoAccess,
   SessionExpiredTreatment,
   SignInTreatment,
-  StepUpPlaceholder,
+  StepUpSurface,
   TwoFactorPlaceholder,
   VerificationWall,
 } from "@/components/auth/treatment-surfaces";
@@ -40,7 +40,7 @@ export function AuthErrorSurface({
     case "two-factor":
       return <TwoFactorPlaceholder onForward={onForward} />;
     case "step-up":
-      return <StepUpPlaceholder onForward={onForward} />;
+      return <StepUpSurface onForward={onForward} />;
     case "account-locked":
       return <AccountLocked onForward={onForward} />;
     default:

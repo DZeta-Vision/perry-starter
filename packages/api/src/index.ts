@@ -7,6 +7,8 @@ import {
   resolveGlobalRoles,
   roles,
 } from "@perry-starter/auth/rbac";
+import type { DangerousAction } from "@perry-starter/auth/step-up";
+import type { StepUpGrantStore } from "@perry-starter/auth/step-up-store";
 import {
   evaluateCredentialChain,
   TWO_FACTOR_CHALLENGE_PATH,
@@ -302,3 +304,163 @@ const credentialChainRouter = tCredentialChain.router({
 // decision directly (no network).
 export const createCredentialChainCaller = (ctx: CredentialChainContext) =>
   credentialChainRouter.createCaller(ctx);
+
+// --- The per-action step-up gate (dangerous mutations) ------------------------
+//
+// A dangerous mutation (role change, invitation creation, and the reserved future
+// ban/impersonate set) must not proceed on a stale or replayed re-auth. This gate
+// requires a FRESH, SINGLE-USE, SHORT-TTL, SERVER-VERIFIED grant bound to
+// (session, action): a prior step-up success never satisfies a later or different
+// action. The presented grant token is read off the CONTEXT (header-threaded on the
+// real host), because middleware runs BEFORE `.input()` parsing — so the token can
+// never ride in the validated input. STEP_UP_REQUIRED is NOT a native tRPC code, so
+// the nearest native FORBIDDEN is thrown and the precise code rides in
+// shape.data.code via the errorFormatter.
+//
+// Fail-closed + session-safe: with no token the gate CHALLENGES; with an invalid
+// token it re-challenges (or, past the fail-twice ceiling, aborts the ACTION) and
+// records the failure through the SHARED per-subject lockout seam — but it NEVER
+// revokes the session on any failure/abort path. Audit is outermost: every attempt
+// (challenge / granted / rejected) writes actor/action/outcome, and a granted
+// mutation ALSO audits its consequent action, so no privileged path is fail-open.
+
+// The append-only step-up attempt event (actor, action, outcome). The host maps the
+// outcome onto the audit vocabulary action `auth.step_up_<outcome>`.
+export interface StepUpAuditEvent {
+  readonly action: DangerousAction;
+  readonly actor: string;
+  readonly outcome: "granted" | "challenged" | "rejected";
+}
+
+export interface StepUpContext {
+  // Injected clock so the TTL boundary is driven deterministically.
+  readonly now: number;
+  // The consequent-action audit the guarded resolver emits on success.
+  readonly recordConsequentAudit: (event: {
+    readonly actor: string;
+    readonly action: string;
+  }) => void;
+  // The SHARED per-subject lockout-recording seam (a failed step-up routes to the
+  // same counter as a failed login). The DO-backed increment behind it is deferred.
+  readonly recordLockoutFailure: (subject: string) => void;
+  // Injected audit sink — every attempt records through it (audit outermost).
+  readonly recordStepUpAudit: (event: StepUpAuditEvent) => void;
+  // The session-revoke seam the step-up path must NEVER call — cancel/fail-twice
+  // abort ONLY the action, never the session. Present so a test can prove it stays
+  // untouched.
+  readonly revokeSession: (sessionId: string) => void;
+  // The server-resolved session. `id` is the session identity the grant binds to
+  // (a grant for one session is rejected for another); `user.id` is the account
+  // subject the lockout seam + audit actor key on.
+  readonly session: {
+    readonly id: string;
+    readonly user: { readonly id: string; readonly role: string };
+  } | null;
+  // The server-side single-use grant store (server-verification + consumption).
+  readonly stepUpStore: StepUpGrantStore;
+  // The presented grant token (context-threaded; absent = the initial challenge).
+  readonly stepUpToken?: string;
+}
+
+const tStepUp = initTRPC.context<StepUpContext>().create({
+  errorFormatter: ({ shape, error }) => ({
+    ...shape,
+    data: { ...shape.data, code: adCodeForError(error) ?? shape.data.code },
+  }),
+});
+
+// Throw the nearest native code carrying STEP_UP_REQUIRED in shape.data.code.
+const stepUpRequired = (): never => {
+  throw new TRPCError({
+    cause: { code: "STEP_UP_REQUIRED" },
+    code: "FORBIDDEN",
+    message: "Step-up re-authentication required for this action",
+  });
+};
+
+// The composable step-up gate, bound to its dangerous action. Layered on a session
+// check; runs BEFORE input parsing. On grant it narrows the session non-null for the
+// resolver.
+const stepUpGuardedProcedure = (action: DangerousAction) =>
+  tStepUp.procedure.use(({ ctx, next }) => {
+    if (!ctx.session) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+      });
+    }
+    const actor = ctx.session.user.id;
+
+    // No token → the initial challenge (not a lockout failure). Audited, then
+    // STEP_UP_REQUIRED raises the modal.
+    if (ctx.stepUpToken === undefined) {
+      ctx.recordStepUpAudit({ action, actor, outcome: "challenged" });
+      stepUpRequired();
+    }
+
+    const result = ctx.stepUpStore.verifyAndConsume({
+      action,
+      now: ctx.now,
+      sessionId: ctx.session.id,
+      token: ctx.stepUpToken,
+    });
+
+    if (!result.granted) {
+      // A presented-but-invalid grant is a FAILURE: audit it and record through the
+      // shared lockout seam. Whether it re-challenges or (fail-twice) aborts the
+      // action, the SESSION is never touched.
+      ctx.recordStepUpAudit({ action, actor, outcome: "rejected" });
+      ctx.recordLockoutFailure(actor);
+      stepUpRequired();
+    }
+
+    ctx.recordStepUpAudit({ action, actor, outcome: "granted" });
+    return next({ ctx: { ...ctx, session: ctx.session } });
+  });
+
+// A session-only (non-step-up) guard for a benign op — proving a non-dangerous
+// mutation needs no step-up grant.
+const stepUpSessionProcedure = tStepUp.procedure.use(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authentication required",
+    });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session } });
+});
+
+const stepUpRouter = tStepUp.router({
+  // Role change (the 5-5 representative) — step-up-guarded. On success it audits its
+  // consequent action, so a granted mutation writes TWO events (grant + action).
+  changeRole: stepUpGuardedProcedure("role.change").mutation(({ ctx }) => {
+    ctx.recordConsequentAudit({
+      action: "admin.role_change",
+      actor: ctx.session.user.id,
+    });
+    return { changed: true };
+  }),
+  // Invitation creation (the 5-6 representative) — step-up-guarded.
+  createInvitation: stepUpGuardedProcedure("invite.create").mutation(
+    ({ ctx }) => {
+      ctx.recordConsequentAudit({
+        action: "admin.invitation_created",
+        actor: ctx.session.user.id,
+      });
+      return { invited: true };
+    }
+  ),
+  // A benign, non-dangerous op — needs NO step-up grant.
+  readSettings: stepUpSessionProcedure.query(() => ({ settings: [] as const })),
+});
+
+// The dangerous router procedures + the (session, action) each binds to. The
+// coverage gate probes each to prove it is step-up-guarded; drift between this map
+// and the wired procedures is caught by the gate.
+export const STEP_UP_PROCEDURES = {
+  changeRole: "role.change",
+  createInvitation: "invite.create",
+} as const satisfies Record<string, DangerousAction>;
+
+export const createStepUpCaller = (ctx: StepUpContext) =>
+  stepUpRouter.createCaller(ctx);

@@ -25,6 +25,7 @@ vi.mock("sonner", () => ({ toast: vi.fn() }));
 const COUNTDOWN_DIGITS_RE = /\b\d+\s*(seconds?|minutes?|s|min)\b/i;
 const NO_ACCESS_RE = /no access|don.t have access|forbidden|not allowed/i;
 const FORWARD_PATH_RE = /back to sign|cancel|continue|sign in|return/i;
+const CANCEL_ACTION_RE = /cancel this action/i;
 const SIGN_IN_RE = /sign in/i;
 const RESEND_RE = /resend/i;
 const CLOSE_RE = /close/i;
@@ -115,15 +116,18 @@ describe("each AuthErrorResponse code maps to exactly one treatment", () => {
     ).toBeInTheDocument();
   });
 
-  test("STEP_UP_REQUIRED resolves to a single placeholder surface with a forward path (never a dialog over a dialog)", () => {
+  test("STEP_UP_REQUIRED resolves to a single step-up modal with a session-safe cancel (never a dialog over a dialog)", () => {
     const { container } = render(
       withTheme(<AuthErrorSurface code="STEP_UP_REQUIRED" />)
     );
     expect(treatmentMarker(container)).toBe("step-up");
+    // A single surface — exactly one dialog, never stacked.
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
+    // Cancel is the session-safe forward path (aborts only the action) — not a
+    // dead-end.
     expect(
-      screen.getByRole("button", { name: FORWARD_PATH_RE })
+      screen.getByRole("button", { name: CANCEL_ACTION_RE })
     ).toBeInTheDocument();
-    expect(screen.queryAllByRole("dialog").length).toBeLessThanOrEqual(1);
   });
 
   test("ACCOUNT_LOCKED resolves to the locked surface with a Turnstile container and no numeric countdown", () => {
