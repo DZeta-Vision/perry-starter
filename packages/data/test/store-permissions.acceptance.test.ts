@@ -19,14 +19,17 @@ const SCHEMA_DIR = join(process.cwd(), "packages", "db", "database", "schema");
 // `user` credential table (no scoped session may read another user's email /
 // argon2 hash), the `document_delta` delta-log, the `document_projection`
 // read-model (both delta-data copies whose cross-scope perimeter is enforced
-// server-side by the server-derived scope), and the `recovery_code` table (the
-// break-glass code hashes are read/consumed only by the privileged system flow).
-// Every OTHER user-data table must scope by $auth.
+// server-side by the server-derived scope), the `recovery_code` table (the
+// break-glass code hashes are read/consumed only by the privileged system flow),
+// and the `invitation` table (the single-use token digests + the role-to-stamp are
+// minted/read/consumed only by the privileged system flow, and no account exists
+// there before acceptance). Every OTHER user-data table must scope by $auth.
 const SEALED_TABLES = new Set([
   "user",
   "document_delta",
   "document_projection",
   "recovery_code",
+  "invitation",
 ]);
 
 // Top-level regex literals (Biome: never build regex inside loops).

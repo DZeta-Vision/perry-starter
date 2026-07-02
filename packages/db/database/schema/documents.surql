@@ -215,3 +215,52 @@ DEFINE FIELD user_ref ON recovery_code TYPE record<user>;
 -- Range-back the per-user recovery-code read (the consume scans a user's unused
 -- codes); never a full-table scan.
 DEFINE INDEX idx_recovery_code_user ON recovery_code FIELDS user_ref;
+
+-- The pending-invitation table — the ONE canonical invitation model. It is SEALED
+-- (PERMISSIONS NONE): no record-access session reads or mutates a row directly.
+-- Mint, resend, revoke, auto-expire, and accept all run in the privileged
+-- system/admin-gated forwarder that bypasses row PERMISSIONS (mirroring the
+-- audit-write and recovery-code paths), so a scoped session can never enumerate an
+-- invitation, read a token digest, or forge/flip a status. Critically, this table
+-- holds NO user account: the account is provisioned only on acceptance, so no
+-- half-formed privileged account ever exists before acceptance.
+--
+-- The token is stored ONLY as a digest (token_hash) — never the plaintext token —
+-- and is single-use: acceptance marks accepted_at once, so a replayed/spent token
+-- can never be re-used. An org-membership invitation reuses THIS table by setting
+-- organization_id and an org-structural role.
+DEFINE TABLE invitation SCHEMAFULL PERMISSIONS NONE;
+
+-- The invited email — the acceptance-time account address, never revealed by any
+-- surface (the invitation is looked up by token digest, never by email).
+DEFINE FIELD email ON invitation TYPE string;
+-- Optional org scope so a future org-membership invitation reuses this same table.
+DEFINE FIELD organization_id ON invitation TYPE option<string>;
+-- The GLOBAL app-authz role to STAMP on acceptance (never stamped at invite time).
+-- Confined to the closed vocabulary at the data layer too.
+DEFINE FIELD role ON invitation TYPE string
+  ASSERT $value INSIDE ['member', 'admin', 'superadmin'];
+-- The single-use token digest (never the plaintext token). The UNIQUE index makes
+-- it the indexable acceptance-lookup key.
+DEFINE FIELD token_hash ON invitation TYPE string;
+-- The inviting admin/superadmin.
+DEFINE FIELD invited_by ON invitation TYPE string;
+-- The lifecycle status, defaulting to pending and constrained to the closed set. A
+-- write with an out-of-vocabulary status is rejected by this ASSERT.
+DEFINE FIELD status ON invitation TYPE string DEFAULT 'pending'
+  ASSERT $value INSIDE ['pending', 'accepted', 'expired', 'revoked'];
+-- Server-stamped, immutable creation time.
+DEFINE FIELD created_at ON invitation TYPE datetime DEFAULT time::now() READONLY;
+-- The expiry window: an invitation past this instant auto-expires and can never be
+-- accepted.
+DEFINE FIELD expires_at ON invitation TYPE datetime;
+-- The single-use spend marker: null until the invitation is accepted, so a replayed
+-- token resolves to consumed.
+DEFINE FIELD accepted_at ON invitation TYPE option<datetime>;
+
+-- The single-use acceptance lookup: a duplicate token digest can never create a
+-- second invitation, and acceptance matches by this UNIQUE digest.
+DEFINE INDEX idx_invitation_token ON invitation FIELDS token_hash UNIQUE;
+-- Range-back the auto-expiry / cleanup sweep (WHERE status = 'pending' AND
+-- expires_at < $now) — an index-backed range walk, never a full table scan.
+DEFINE INDEX idx_invitation_status_expires ON invitation FIELDS status, expires_at;

@@ -53,6 +53,21 @@ const fromBase64Url = (value: string): Uint8Array => {
 export const randomToken = (byteLength: number): string =>
   toBase64Url(crypto.getRandomValues(new Uint8Array(byteLength)));
 
+// Deterministic SHA-256 digest of a HIGH-ENTROPY token — the indexable, single-use
+// lookup key for a token stored at rest. Safe precisely because the token carries
+// ≥256 bits of `crypto.getRandomValues` entropy: a digest is one-way and cannot be
+// brute-forced back to the token, so no per-token salt/slow-KDF is needed (unlike a
+// low-entropy human password, which uses the PBKDF2 path above). The plaintext
+// token is NEVER stored — only this digest — and two calls on the same token yield
+// the same digest, so acceptance can match by a UNIQUE-indexed column.
+export const hashToken = async (token: string): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(token)
+  );
+  return toBase64Url(new Uint8Array(digest));
+};
+
 const deriveBits = async (
   secret: string,
   salt: Uint8Array,
