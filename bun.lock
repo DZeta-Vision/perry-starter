@@ -178,6 +178,7 @@
       "name": "@perry-starter/api",
       "dependencies": {
         "@perry-starter/auth": "workspace:*",
+        "@perry-starter/db": "workspace:*",
         "@perry-starter/env": "workspace:*",
         "@trpc/client": "catalog:",
         "@trpc/server": "catalog:",

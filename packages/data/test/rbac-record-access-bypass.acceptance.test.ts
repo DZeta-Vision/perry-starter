@@ -18,8 +18,9 @@
 //  - with a real audit_log row seeded, admin AND superadmin READ it (row
 //    returned) while a member is DENIED (empty) — the $auth.role escalation
 //    actually distinguishes granted from denied
-//  - an audit-log write records the AUTHENTICATED actor; a client-supplied
-//    actor_id is overwritten by the VALUE binding (no forged actor)
+//  - an authentic but below-admin session cannot append a forged audit row: the
+//    append-only write gate admits only the system/admin tier, so nothing is
+//    written (no forged actor entry)
 //  - a root/Basic system cred DOES leak a foreign row (root bypasses
 //    PERMISSIONS) — proving the store must never query with root
 //  - the per-request query path uses a Bearer session, never the root cred
@@ -43,8 +44,6 @@ const SURREAL_DB = "perry";
 
 const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
 const LINE_COMMENT_RE = /(^|[^:])\/\/.*$/gm;
-// A record-access actor id is `user:<id>`; the seeded actor must look like one.
-const RECORD_ACTOR_RE = /^user:/;
 const BEARER_AUTH_RE = /kind\s*:\s*["']bearer["']/;
 const ROOT_CREDENTIAL_RES = [/\bSURREAL_USER\b/, /\bSURREAL_PASS\b/] as const;
 
@@ -257,16 +256,18 @@ describe("the local leg queries through a scoped record-access Bearer session bo
           "mallory@example.com",
           "mallory-pass"
         );
-        // SEED one real audit_log row so "granted" (the row is returned) is
+        // SEED one real audit_log row via the privileged system (root) write path —
+        // the audit trail is system-written — so "granted" (the row is returned) is
         // distinguishable from "denied" (empty). Without a seeded row both tiers
-        // would read [] and the escalation would be untested. `FOR create FULL`
-        // lets the admin session append it; actor_id is bound to $auth server-side.
+        // would read [] and the escalation would be untested. Root bypasses
+        // PERMISSIONS (standing in for the trusted forwarder); the row carries the
+        // full canonical field set with a valid domain.verb action.
         await sql(
           sidecar.url,
           SURREAL_NS,
           SURREAL_DB,
-          bearer(adminToken),
-          "CREATE audit_log SET action = 'session.created';"
+          { kind: "basic", pass: ROOT_PASS, user: ROOT_USER },
+          "CREATE type::record('audit_log', '01ARZ3NDEKTSV4RRFFQ69G5FAV') SET action = 'session.created', actor = 'user:system', actor_email = 'system@example.com', actor_role = 'superadmin', target_type = 'session', target_id = 'session:1', metadata = {}, ip = '127.0.0.1', user_agent = 'UA';"
         );
         const adminSees = await sql(
           sidecar.url,
@@ -301,52 +302,43 @@ describe("the local leg queries through a scoped record-access Bearer session bo
   );
 
   acceptance(
-    "an audit-log write records the authenticated actor, never a client-supplied one",
+    "an authentic but below-admin session cannot append a forged audit row",
     async () => {
       const sidecar = await startMemorySidecar();
       try {
         const { sql, signin } = await loadHttp();
         await applySchemaAsRoot(sql, sidecar.url);
-        // An admin both writes (FOR create FULL) and reads (escalation) the trail.
-        const adminToken = await signin(sidecar.url, {
-          ns: SURREAL_NS,
-          db: SURREAL_DB,
-          ac: "account",
-          email: "auditor@example.com",
-          pass: "auditor-pass",
-          role: "admin",
-        });
-        // The writer's own authenticated record id, as the actor_id VALUE computes
-        // it (type::string($auth)). $auth at statement level is the record link.
-        const selfActor = await sql(
+        // A member session is authentic ($auth resolves) but is NOT a system/admin
+        // write flow. The append-only audit write path is not fail-open: the
+        // row-level FOR create grant admits only the admin/superadmin tier (and the
+        // privileged system writer, which bypasses PERMISSIONS). So a member trying
+        // to inject an event under a fabricated actor writes NOTHING — the actor is
+        // supplied and validated by the trusted system writer, never the client.
+        const memberToken = await signinScoped(
+          signin,
+          sidecar.url,
+          "mallory@example.com",
+          "mallory-pass"
+        );
+        const forgeAttempt = await sql(
           sidecar.url,
           SURREAL_NS,
           SURREAL_DB,
-          bearer(adminToken),
-          "RETURN type::string($auth);"
+          bearer(memberToken),
+          "CREATE type::record('audit_log', '01D78XYFJ1PRM1WPBCBT3VHMNV') SET action = 'session.created', actor = 'user:forged-attacker', actor_email = 'x@example.com', actor_role = 'member', target_type = 'session', target_id = 'session:1', metadata = {}, ip = '127.0.0.1', user_agent = 'UA';"
         );
-        const authenticatedActor = selfActor[0].result as string;
-        // Attempt to FORGE the actor: the create payload names a different actor.
-        await sql(
+        // The create is denied by the row-level grant — no row is returned...
+        expect(forgeAttempt[0].result).toEqual([]);
+        // ...and none was written: a root read (bypasses PERMISSIONS) sees an empty
+        // trail, so no forged-actor row exists.
+        const allRows = await sql(
           sidecar.url,
           SURREAL_NS,
           SURREAL_DB,
-          bearer(adminToken),
-          "CREATE audit_log SET action = 'forge.attempt', actor_id = 'user:forged-attacker';"
+          { kind: "basic", pass: ROOT_PASS, user: ROOT_USER },
+          "SELECT * FROM audit_log;"
         );
-        const stored = await sql(
-          sidecar.url,
-          SURREAL_NS,
-          SURREAL_DB,
-          bearer(adminToken),
-          "SELECT actor_id FROM audit_log;"
-        );
-        const row = rowsOf(stored)[0] as { actor_id?: string } | undefined;
-        // The forged actor_id was overwritten by the VALUE binding: the stored
-        // actor is the authenticated session, not the client-supplied string.
-        expect(authenticatedActor).toMatch(RECORD_ACTOR_RE);
-        expect(row?.actor_id).toBe(authenticatedActor);
-        expect(row?.actor_id).not.toBe("user:forged-attacker");
+        expect(rowsOf(allRows)).toEqual([]);
       } finally {
         sidecar.stop();
       }

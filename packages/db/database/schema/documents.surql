@@ -121,23 +121,56 @@ DEFINE INDEX idx_document_projection_scope_doc ON document_projection FIELDS sco
 -- index never mixes embedding spaces (the read filters embedding_model too).
 DEFINE INDEX idx_document_projection_embedding ON document_projection FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;
 
--- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
--- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim
--- $auth.role split on ',', never an org-structural role). NO role — not even
--- superadmin — may update or delete an entry: FOR update, delete NONE holds for
--- everyone, so the trail can never be rewritten. The escalation predicate here is
--- the one the row-PERMISSIONS generator emits from the single-sourced matrix.
+-- The audit trail is APPEND-ONLY and SYSTEM-WRITTEN, carrying the full canonical
+-- entry field set. Immutability and least-privilege are enforced at the row layer:
+--
+--   * FOR update, delete NONE holds for EVERY role including superadmin, so no
+--     authenticated session — not even the highest tier — can rewrite, redact, or
+--     clear an entry. The trail can only grow.
+--   * FOR create is GATED to the admin/superadmin escalation, NOT left open (FULL).
+--     Writes are system-level: the privileged forwarder that runs after the tRPC
+--     authorization layer holds the write context (a root/system credential
+--     bypasses row PERMISSIONS), and a below-admin scoped session can NEVER inject
+--     a row. An arbitrary authenticated member session appending a forged event is
+--     denied here — closing the audit-write fail-open at the data layer.
+--   * FOR select is permitted only to the admin/superadmin tier, keyed on the
+--     GLOBAL role claim $auth.role split on ',' (never an org-structural role), so
+--     a non-admin session reads zero rows even if the tRPC layer were bypassed.
+--
+-- The COMMENT carries the machine-readable retention contract (retention_days) the
+-- immutability conformance gate reads; a value under the 90-day floor reddens it.
 DEFINE TABLE audit_log SCHEMAFULL
+  COMMENT 'append-only system-written audit trail. retention_days=90'
   PERMISSIONS
-    FOR create FULL
+    FOR create WHERE string::split($auth.role, ',') CONTAINS 'admin' OR string::split($auth.role, ',') CONTAINS 'superadmin'
     FOR select WHERE string::split($auth.role, ',') CONTAINS 'admin' OR string::split($auth.role, ',') CONTAINS 'superadmin'
     FOR update, delete NONE;
 
-DEFINE FIELD action ON audit_log TYPE string;
--- actor_id is the AUTHENTICATED writer, never client-supplied: VALUE recomputes
--- it from the session's $auth on every write, so a forged actor_id in the create
--- payload is overwritten by type::string($auth) (the record-access user's id).
--- This closes the write-authenticity hole that a plain DEFAULT '' left open while
--- keeping the trail append-only (FOR update, delete NONE above).
-DEFINE FIELD actor_id ON audit_log TYPE string VALUE type::string($auth);
-DEFINE FIELD created_at ON audit_log TYPE datetime DEFAULT time::now() READONLY;
+-- The action is constrained to the closed `<domain>.<verb>` vocabulary at the data
+-- layer too (the Zod auditEntrySchema enforces the same at the write boundary): the
+-- domain must be one of the closed set and a verb must follow the dot. A write with
+-- an out-of-vocabulary action (e.g. 'billing.charge') is rejected by this ASSERT.
+DEFINE FIELD action ON audit_log TYPE string
+  ASSERT array::len(string::split($value, '.')) >= 2
+    AND string::split($value, '.')[0] INSIDE ['auth', 'admin', 'session', 'lockout', 'user'];
+-- The actor and the rest of the entry are supplied by the trusted system writer and
+-- validated against the canonical shape at the write gate before they reach here;
+-- the record id is a server-minted ULID (the idempotency key). Free-text fields
+-- (actor_email / user_agent / ip) can carry arbitrary bytes and travel as bound
+-- query variables on the write path, never spliced into the statement body.
+DEFINE FIELD actor ON audit_log TYPE string;
+DEFINE FIELD actor_email ON audit_log TYPE string;
+DEFINE FIELD actor_role ON audit_log TYPE string;
+DEFINE FIELD target_type ON audit_log TYPE string;
+DEFINE FIELD target_id ON audit_log TYPE string;
+DEFINE FIELD metadata ON audit_log TYPE object FLEXIBLE DEFAULT {};
+DEFINE FIELD ip ON audit_log TYPE string;
+DEFINE FIELD user_agent ON audit_log TYPE string;
+-- Server-generated, immutable ISO-8601 timestamp (READONLY: never client-supplied,
+-- never updatable). SurrealDB serializes the datetime to an ISO-8601 string on read.
+DEFINE FIELD timestamp ON audit_log TYPE datetime DEFAULT time::now() READONLY;
+
+-- Keyset read index: entries are read newest-first by the time-sortable ULID record
+-- id (WHERE id > $cursor ORDER BY id LIMIT $n), never an OFFSET/START deep page. The
+-- timestamp index backs range-scoped retention queries.
+DEFINE INDEX idx_audit_log_timestamp ON audit_log FIELDS timestamp;
