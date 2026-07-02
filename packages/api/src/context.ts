@@ -31,6 +31,7 @@ import {
 } from "./admin-sinks";
 import type { AuditContext } from "./audit-log";
 import { type AdminExportSink, makeExportSink } from "./data-export";
+import { type ErasureSink, makeErasureSink } from "./erasure";
 import type { InvitationContext } from "./invitations";
 import type { UserAdminContext } from "./user-admin";
 
@@ -56,6 +57,10 @@ export type Context = {
   // The forwarder-backed self-scoped data-export sink. Absent on the relay tier,
   // so the export procedure fails closed (`requireSink`) there.
   readonly exportUserData?: AdminExportSink["exportUserData"];
+  // The forwarder-backed self-service erasure sinks (soft-delete + crypto-shred
+  // registration). Absent on the relay tier, so the erasure request fails closed.
+  readonly registerShredSubject?: ErasureSink["registerShredSubject"];
+  readonly softDeleteForErasure?: ErasureSink["softDeleteForErasure"];
 } & Partial<Pick<AuditContext, "readAuditEntries">> &
   Partial<
     Pick<
@@ -202,6 +207,10 @@ export const buildAdminContext = async ({
   // The self-scoped data-export sink rides the SAME single post-auth forwarder, so
   // every export read is owner-scoped through the one trusted binding.
   const exportSink = makeExportSink(forward);
+  // The self-service erasure sinks (soft-delete tombstone UPDATE + crypto-shred
+  // registration) ride the SAME forwarder, so both writes go through the one trusted
+  // binding; absent on the relay tier (no forwarder), so erasure fails closed there.
+  const erasureSink = makeErasureSink(forward);
   // Wire the consequent + step-up audit recorders on the SAME forwarder-backed
   // `writeAudit` sink as the data sinks, so a privileged mutation's immutable-audit
   // event travels the ONE trusted system-level append. Absent on the relay tier (no
@@ -211,7 +220,7 @@ export const buildAdminContext = async ({
     sinks.writeAudit,
     auditIdentityFrom(rawSession, session, req)
   );
-  return { ...base, ...sinks, ...recorders, ...exportSink };
+  return { ...base, ...sinks, ...recorders, ...exportSink, ...erasureSink };
 };
 
 // The web relay's context factory (the shape tRPC's fetch adapter calls): session +

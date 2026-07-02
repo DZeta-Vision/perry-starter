@@ -15,14 +15,18 @@
 // here. None of this is a built-in better-auth feature — it is custom adopter
 // wiring, and `freshAge` is never reused as the step-up gate.
 
-// The closed vocabulary of actions that require a step-up grant. `role.change` and
-// `invite.create` are the mutations wired now; `user.ban` / `user.impersonate` are
-// the reserved future set (declared so the coverage gate knows them, guarded when
-// their procedures land). Top-level literal — never rebuilt in a loop.
+// The closed vocabulary of actions that require a step-up grant. `role.change`,
+// `invite.create`, `user.ban`, and `user.erasure` are the mutations wired now;
+// `user.impersonate` is the reserved future set (declared so the coverage gate
+// knows it, guarded when its procedure lands). `user.erasure` gates the GDPR
+// self-service erasure request — a member erasing their OWN account must clear a
+// fresh, single-use, (session, action)-bound step-up before the soft-delete
+// proceeds. Top-level literal — never rebuilt in a loop.
 export const DANGEROUS_ACTIONS = [
   "role.change",
   "invite.create",
   "user.ban",
+  "user.erasure",
   "user.impersonate",
 ] as const;
 

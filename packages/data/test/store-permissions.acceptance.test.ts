@@ -30,6 +30,7 @@ const SEALED_TABLES = new Set([
   "document_projection",
   "recovery_code",
   "invitation",
+  "erasure_shred_subject",
 ]);
 
 // Top-level regex literals (Biome: never build regex inside loops).

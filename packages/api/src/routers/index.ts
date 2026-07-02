@@ -1,5 +1,6 @@
 import { auditRouter } from "../audit-log";
 import { complianceRouter } from "../data-export";
+import { erasureRouter } from "../erasure";
 import {
   adminProcedure,
   protectedProcedure,
@@ -32,6 +33,10 @@ export const appRouter = router({
   // Self-service GDPR data export: a signed-in member exports ONLY their own
   // records, server-scoped to `session.user.id`. Fails closed on the relay.
   compliance: complianceRouter,
+  // Self-service GDPR erasure: a signed-in member soft-deletes their OWN account
+  // behind a fresh, single-use, per-action step-up, registers for the deferred
+  // crypto-shred, and audits the erasure. Fails closed on the relay.
+  erasure: erasureRouter,
   healthCheck: publicProcedure.query(() => "OK"),
   invitation: invitationRouter,
   privateData: protectedProcedure.query(({ ctx }) => ({

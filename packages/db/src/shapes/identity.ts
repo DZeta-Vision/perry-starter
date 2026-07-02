@@ -13,11 +13,18 @@ export const localeSchema = z.enum(["en", "fr"]).default("en");
 export const LOCALE_DEFAULT = "en" as const;
 
 // The user model's single-sourced additionalFields: a constrained locale plus
-// the given/family name parts. A missing name part is rejected.
+// the given/family name parts. A missing name part is rejected. The erasure
+// tombstones (deletedAt / erasureRequestedAt) ride alongside as NULLABLE, absent
+// columns: a live account carries neither. They are stamped by the GDPR erasure
+// request — a SOFT flip, never a hard row DELETE — so an erased account survives
+// (recoverable) until the scheduled crypto-shred; a legacy row minted before the
+// columns existed parses with both unset.
 export const userAdditionalFields = z.object({
   locale: localeSchema,
   given_name: z.string().min(1),
   family_name: z.string().min(1),
+  deletedAt: z.string().min(1).nullish(),
+  erasureRequestedAt: z.string().min(1).nullish(),
 });
 
 // The GLOBAL application authorization tier (admin-plugin `user.role`): a single
@@ -61,6 +68,10 @@ export const userSchema = z.object({
   locale: localeSchema,
   given_name: z.string().min(1),
   family_name: z.string().min(1),
+  // Erasure tombstones — null/absent on a live account, stamped (never a hard
+  // DELETE) by the GDPR erasure request so the row survives recoverable.
+  deletedAt: z.string().min(1).nullish(),
+  erasureRequestedAt: z.string().min(1).nullish(),
 });
 
 export type User = z.infer<typeof userSchema>;

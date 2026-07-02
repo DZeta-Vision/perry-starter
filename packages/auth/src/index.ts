@@ -18,6 +18,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { recordAuthAudit } from "./auth-audit";
 import { VERIFICATION_TOKEN_TTL_SECONDS } from "./email-verification";
+import { blockHardDelete } from "./hard-delete-block";
 import { HIBP_SCREENED_PATHS, screenPasswordForBreach } from "./hibp-screen";
 import {
   GENERIC_OAUTH_ERROR_ROUTE,
@@ -64,6 +65,16 @@ import {
 // tier. Both enforcement legs (the in-process tRPC middleware AND the SurrealDB
 // row-level PERMISSIONS) derive from THIS object so they cannot drift. Exported
 // so the row-PERMISSIONS generator reads the same resource set.
+//
+// The `user` resource DELIBERATELY exposes only `list`/`set-role` — NO `delete`
+// and NO `impersonate` action. That omission is LOAD-BEARING, not incidental:
+// better-auth's admin plugin `removeUser`/`impersonateUser` endpoints do NOT run
+// `user.deleteUser.beforeDelete` (that hook covers only the self-service
+// `/delete-user` path); they instead gate on `hasPermission({ user: ['delete'] })`
+// / `({ user: ['impersonate'] })` against THESE role grants. So the ABSENCE of a
+// `user:delete`/`user:impersonate` action is precisely what keeps the admin
+// hard-delete/impersonate paths withheld. The hard-delete-block gate asserts this
+// structurally, so re-adding either action reddens CI.
 export const statement = {
   document: ["create", "read", "update", "delete"],
   user: ["list", "set-role"],
@@ -72,20 +83,31 @@ export const statement = {
 
 export const ac = createAccessControl(statement);
 
-// member < admin < superadmin. `set-role` is held by superadmin ONLY (role
-// assignment is superadmin-gated; the numeric hierarchy forbids self-elevation).
-export const roles = {
-  member: ac.newRole({ document: ["read"] }),
-  admin: ac.newRole({
+// The per-role capability grants — single-sourced HERE so BOTH `ac.newRole()` (the
+// in-process authorize leg the admin plugin's `hasPermission` consults) AND the
+// hard-delete-block structural gate read the SAME data. member < admin <
+// superadmin. `set-role` is held by superadmin ONLY (role assignment is
+// superadmin-gated; the numeric hierarchy forbids self-elevation). NO role grants
+// `user:delete` or any `impersonate` action, so the admin hard-delete/impersonate
+// paths stay denied by this permission gap.
+export const roleGrants = {
+  member: { document: ["read"] },
+  admin: {
     document: ["create", "read", "update", "delete"],
     user: ["list"],
     audit: ["read"],
-  }),
-  superadmin: ac.newRole({
+  },
+  superadmin: {
     document: ["create", "read", "update", "delete"],
     user: ["list", "set-role"],
     audit: ["read"],
-  }),
+  },
+} as const;
+
+export const roles = {
+  member: ac.newRole(roleGrants.member),
+  admin: ac.newRole(roleGrants.admin),
+  superadmin: ac.newRole(roleGrants.superadmin),
 };
 
 // The admin-tier role set — DERIVED from the ONE matrix (the tiers the matrix
@@ -97,6 +119,24 @@ export const roles = {
 export const ADMIN_TIER_ROLES: string[] = (
   ["member", "admin", "superadmin"] as const
 ).filter((tier) => roles[tier].authorize({ user: ["list"] }, "AND").success);
+
+// The admin() plugin options — extracted and EXPORTED so the hard-delete-block gate
+// can assert the two admin-path bypass surfaces stay UNSET. Neither `adminUserIds`
+// (the `hasPermission` short-circuit that returns true for any listed id, bypassing
+// the role check entirely) nor `allowImpersonatingAdmins`/`impersonationSessionDuration`
+// (the impersonation surface) is set here — so the admin `removeUser`/`impersonateUser`
+// endpoints have no bypass and stay denied by the `roleGrants` permission gap above.
+// Setting any of these would silently open a hard-delete/impersonation path; the gate
+// reddens if they ever appear.
+export const adminPluginOptions = {
+  ac,
+  // Matrix-derived admin role set (the tiers holding `user:list`) — NOT a hand-typed
+  // literal — so the auth library never sanctions an admin role the one matrix does
+  // not, and the fail-closed checkpoint reads the same set.
+  adminRoles: ADMIN_TIER_ROLES,
+  defaultRole: "member",
+  roles,
+};
 
 // Re-exposed from the single-sourced db shape (member:0 < admin:1 < superadmin:2).
 export const APP_ROLE_RANK = APP_ROLE_RANK_SOURCE;
@@ -244,6 +284,12 @@ const additionalFields: Record<
     required: false,
     defaultValue: false,
   },
+  // The GDPR erasure tombstones. A live account carries neither; the erasure
+  // request stamps them via a SOFT flip (never a hard DELETE), so the row survives
+  // recoverable until the deferred crypto-shred. Optional so existing rows read as
+  // "not erased". Single-sourced alongside the identity shape's userAdditionalFields.
+  deletedAt: { type: "string", required: false },
+  erasureRequestedAt: { type: "string", required: false },
 };
 
 // Guard against drift: every field in the canonical db shape must be exposed.
@@ -530,7 +576,21 @@ export const buildAuthOptions = (
   // is global but affects ONLY the reset flow in this configuration — email
   // verification uses a stateless signed JWT and never writes this table.
   verification: { storeIdentifier: "hashed" },
-  user: { additionalFields },
+  // The user model + the SELF-SERVICE HARD-DELETE BLOCK. better-auth's deleteUser is
+  // a hard delete only; GDPR erasure here is soft-delete + scheduled crypto-shred, so
+  // the destructive hard delete must be unreachable. `beforeDelete` covers EXACTLY
+  // the self-service `/delete-user` (+ `/delete-user/callback`) path — better-auth
+  // invokes it there before `internalAdapter.deleteUser`, so this throw (blockHardDelete)
+  // interrupts a self-initiated hard delete before any row is removed. It does NOT
+  // cover the admin `/admin/remove-user` or `/admin/impersonate-user` paths — those
+  // BYPASS `beforeDelete` and are withheld INSTEAD by the access-control permission
+  // gap (the `user` statement/`roleGrants` grant no `delete`/`impersonate` action) and
+  // by leaving `adminPluginOptions.adminUserIds`/`allowImpersonatingAdmins` unset. The
+  // only erasure surface is the soft-delete request (packages/api erasure router).
+  user: {
+    additionalFields,
+    deleteUser: { enabled: true, beforeDelete: () => blockHardDelete() },
+  },
   // HIBP breach screening on the credential-setting paths — fail-OPEN (see
   // breachScreenBeforeHook). Replaces the throwing haveIBeenPwned() plugin.
   hooks: { before: breachScreenBeforeHook },
@@ -583,15 +643,7 @@ export const buildAuthOptions = (
       Promise.resolve(projectGetSession({ user, session }))
     ),
     bearer(),
-    admin({
-      ac,
-      roles,
-      defaultRole: "member",
-      // Matrix-derived admin role set (the tiers holding `user:list`) — NOT a
-      // hand-typed literal — so the auth library never sanctions an admin role the
-      // one matrix does not, and the fail-closed checkpoint reads the same set.
-      adminRoles: ADMIN_TIER_ROLES,
-    }),
+    admin(adminPluginOptions),
     tanstackStartCookies(),
   ],
 });

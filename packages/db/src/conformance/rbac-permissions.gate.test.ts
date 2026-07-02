@@ -21,6 +21,7 @@ const SEALED_TABLES = new Set([
   "document_projection",
   "recovery_code",
   "invitation",
+  "erasure_shred_subject",
 ]);
 const AUDIT_TABLE = "audit_log";
 

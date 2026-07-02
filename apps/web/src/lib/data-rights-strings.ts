@@ -19,7 +19,18 @@ export type DataRightsKey =
   | "dataRights.export.pending"
   | "dataRights.export.ready"
   | "dataRights.export.download"
-  | "dataRights.export.error";
+  | "dataRights.export.error"
+  | "dataRights.erasure.heading"
+  | "dataRights.erasure.description"
+  | "dataRights.erasure.action"
+  | "dataRights.erasure.confirmTitle"
+  | "dataRights.erasure.confirmBody"
+  | "dataRights.erasure.confirmCta"
+  | "dataRights.erasure.cancel"
+  | "dataRights.erasure.stepUpNotice"
+  | "dataRights.erasure.pending"
+  | "dataRights.erasure.requested"
+  | "dataRights.erasure.error";
 
 // The full key set (single-sourced), so a conformance gate can assert EN/FR parity
 // without re-listing the keys.
@@ -32,6 +43,17 @@ export const DATA_RIGHTS_KEYS: readonly DataRightsKey[] = [
   "dataRights.export.ready",
   "dataRights.export.download",
   "dataRights.export.error",
+  "dataRights.erasure.heading",
+  "dataRights.erasure.description",
+  "dataRights.erasure.action",
+  "dataRights.erasure.confirmTitle",
+  "dataRights.erasure.confirmBody",
+  "dataRights.erasure.confirmCta",
+  "dataRights.erasure.cancel",
+  "dataRights.erasure.stepUpNotice",
+  "dataRights.erasure.pending",
+  "dataRights.erasure.requested",
+  "dataRights.erasure.error",
 ];
 
 const EN: Record<DataRightsKey, string> = {
@@ -45,6 +67,22 @@ const EN: Record<DataRightsKey, string> = {
   "dataRights.export.download": "Download the file",
   "dataRights.export.error":
     "We couldn't prepare your export. Please try again.",
+  "dataRights.erasure.heading": "Erase your account",
+  "dataRights.erasure.description":
+    "Request erasure of your account and personal data. Your account is deactivated and scheduled for permanent deletion; it stays recoverable until then.",
+  "dataRights.erasure.action": "Request account erasure",
+  "dataRights.erasure.confirmTitle": "Erase your account?",
+  "dataRights.erasure.confirmBody":
+    "This deactivates your account and schedules it for permanent deletion. It stays recoverable until the scheduled deletion runs. You will be asked to confirm your identity before it proceeds.",
+  "dataRights.erasure.confirmCta": "Yes, request erasure",
+  "dataRights.erasure.cancel": "Cancel",
+  "dataRights.erasure.stepUpNotice":
+    "Confirm your identity to complete the erasure request.",
+  "dataRights.erasure.pending": "Recording your erasure request…",
+  "dataRights.erasure.requested":
+    "Your erasure request has been recorded. Your account is scheduled for deletion and stays recoverable until then.",
+  "dataRights.erasure.error":
+    "We couldn't record your erasure request. Please try again.",
 };
 
 // FR copy — deliberately fuller wording (the FR strings run noticeably longer than
@@ -60,6 +98,22 @@ const FR: Record<DataRightsKey, string> = {
   "dataRights.export.download": "Télécharger le fichier",
   "dataRights.export.error":
     "Nous n'avons pas pu préparer votre export. Veuillez réessayer.",
+  "dataRights.erasure.heading": "Effacer votre compte",
+  "dataRights.erasure.description":
+    "Demandez l'effacement de votre compte et de vos données personnelles. Votre compte est désactivé et programmé pour une suppression définitive ; il reste récupérable jusque-là.",
+  "dataRights.erasure.action": "Demander l'effacement du compte",
+  "dataRights.erasure.confirmTitle": "Effacer votre compte ?",
+  "dataRights.erasure.confirmBody":
+    "Cette action désactive votre compte et le programme pour une suppression définitive. Il reste récupérable jusqu'à l'exécution de la suppression programmée. Vous devrez confirmer votre identité avant que l'opération ne se poursuive.",
+  "dataRights.erasure.confirmCta": "Oui, demander l'effacement",
+  "dataRights.erasure.cancel": "Annuler",
+  "dataRights.erasure.stepUpNotice":
+    "Confirmez votre identité pour finaliser la demande d'effacement.",
+  "dataRights.erasure.pending": "Enregistrement de votre demande d'effacement…",
+  "dataRights.erasure.requested":
+    "Votre demande d'effacement a été enregistrée. Votre compte est programmé pour suppression et reste récupérable jusque-là.",
+  "dataRights.erasure.error":
+    "Nous n'avons pas pu enregistrer votre demande d'effacement. Veuillez réessayer.",
 };
 
 export const dataRightsCatalog: Record<

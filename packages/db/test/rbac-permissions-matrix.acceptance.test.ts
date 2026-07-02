@@ -27,6 +27,7 @@ const SEALED_TABLES = new Set([
   "document_projection",
   "recovery_code",
   "invitation",
+  "erasure_shred_subject",
 ]);
 // The append-only audit table (added at green phase).
 const AUDIT_TABLE = "audit_log";

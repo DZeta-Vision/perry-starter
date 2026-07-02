@@ -29,6 +29,9 @@ export const PROCEDURE_TIERS: Record<string, ProcedureTier> = {
   // Self-service data export is an authenticated (non-admin) subject right — the
   // procedure is self-scoped to the session subject, so it sits behind `auth`.
   "compliance.exportMyData": "auth",
+  // Self-service erasure is an authenticated (non-admin) subject right, self-scoped
+  // to the session subject AND step-up-guarded — it sits behind `auth`.
+  "erasure.requestErasure": "auth",
   healthCheck: "public",
   "invitation.acceptInvitation": "public",
   "invitation.createInvitation": "admin",
