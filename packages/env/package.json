@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./security-headers": "./src/security-headers.ts",
     "./server": "./src/server.ts",
     "./web": "./src/web.ts"
   },
