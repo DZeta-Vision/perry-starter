@@ -30,6 +30,7 @@ import {
   makeAuditRecorders,
 } from "./admin-sinks";
 import type { AuditContext } from "./audit-log";
+import { type AdminExportSink, makeExportSink } from "./data-export";
 import type { InvitationContext } from "./invitations";
 import type { UserAdminContext } from "./user-admin";
 
@@ -52,6 +53,9 @@ export type Context = {
   readonly session: AdminSession | null;
   readonly stepUpToken?: string;
   readonly writeAudit?: AdminDataSinks["writeAudit"];
+  // The forwarder-backed self-scoped data-export sink. Absent on the relay tier,
+  // so the export procedure fails closed (`requireSink`) there.
+  readonly exportUserData?: AdminExportSink["exportUserData"];
 } & Partial<Pick<AuditContext, "readAuditEntries">> &
   Partial<
     Pick<
@@ -195,6 +199,9 @@ export const buildAdminContext = async ({
   const forward: AdminForward = (query, vars) =>
     sql(surreal.url, surreal.ns, surreal.db, credential, query, vars);
   const sinks = makeAdminSinks(forward);
+  // The self-scoped data-export sink rides the SAME single post-auth forwarder, so
+  // every export read is owner-scoped through the one trusted binding.
+  const exportSink = makeExportSink(forward);
   // Wire the consequent + step-up audit recorders on the SAME forwarder-backed
   // `writeAudit` sink as the data sinks, so a privileged mutation's immutable-audit
   // event travels the ONE trusted system-level append. Absent on the relay tier (no
@@ -204,7 +211,7 @@ export const buildAdminContext = async ({
     sinks.writeAudit,
     auditIdentityFrom(rawSession, session, req)
   );
-  return { ...base, ...sinks, ...recorders };
+  return { ...base, ...sinks, ...recorders, ...exportSink };
 };
 
 // The web relay's context factory (the shape tRPC's fetch adapter calls): session +

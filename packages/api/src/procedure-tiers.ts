@@ -26,6 +26,9 @@ export type ProcedureTier = "public" | "auth" | "admin";
 export const PROCEDURE_TIERS: Record<string, ProcedureTier> = {
   "admin.summary": "admin",
   "audit.list": "admin",
+  // Self-service data export is an authenticated (non-admin) subject right — the
+  // procedure is self-scoped to the session subject, so it sits behind `auth`.
+  "compliance.exportMyData": "auth",
   healthCheck: "public",
   "invitation.acceptInvitation": "public",
   "invitation.createInvitation": "admin",

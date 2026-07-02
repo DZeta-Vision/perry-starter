@@ -8,6 +8,7 @@
     "./shapes/delta-envelope": "./src/shapes/delta-envelope.ts",
     "./shapes/document-projection": "./src/shapes/document-projection.ts",
     "./shapes/audit-entry": "./src/shapes/audit-entry.ts",
+    "./shapes/data-export": "./src/shapes/data-export.ts",
     "./shapes/identity": "./src/shapes/identity.ts",
     "./shapes/invitation": "./src/shapes/invitation.ts",
     "./shapes/session-payload": "./src/shapes/session-payload.ts",

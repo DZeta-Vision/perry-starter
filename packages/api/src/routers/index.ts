@@ -1,4 +1,5 @@
 import { auditRouter } from "../audit-log";
+import { complianceRouter } from "../data-export";
 import {
   adminProcedure,
   protectedProcedure,
@@ -28,6 +29,9 @@ export const appRouter = router({
     })),
   }),
   audit: auditRouter,
+  // Self-service GDPR data export: a signed-in member exports ONLY their own
+  // records, server-scoped to `session.user.id`. Fails closed on the relay.
+  compliance: complianceRouter,
   healthCheck: publicProcedure.query(() => "OK"),
   invitation: invitationRouter,
   privateData: protectedProcedure.query(({ ctx }) => ({
