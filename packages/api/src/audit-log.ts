@@ -18,8 +18,11 @@ import {
   type AuditEntry,
   auditEntrySchema,
 } from "@perry-starter/db/shapes/audit-entry";
-import { initTRPC, TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
+import { requireSink } from "./fail-closed";
+import { t } from "./index";
 
 // A generic, enumeration-silent denial message: it never names the audit resource,
 // so a non-admin caller learns only "insufficient role", not that a trail exists.
@@ -198,31 +201,25 @@ export const mapAuditRow = (raw: Record<string, unknown>): AuditEntry => {
 // --- The admin-only read procedure (the tRPC leg) ------------------------------
 
 interface AuditReadSession {
+  // `id` is the session identity (unused by the read leg but present so the audit
+  // context stays assignable to the unified served context).
+  readonly id: string;
   readonly user: { readonly id: string; readonly role: string };
 }
 export interface AuditContext {
   // The bound read leg: the host wires the privileged forwarder that runs the
   // keyset SELECT (which the row-level SELECT permission scopes to admin/superadmin
-  // again). Injected so the middleware decision is exercised without a live DB.
-  readonly readAuditEntries: (
+  // again). Injected so the middleware decision is exercised without a live DB. On a
+  // tier with no forwarder it is absent and the read FAILS CLOSED (throws).
+  readonly readAuditEntries?: (
     input: AuditListInput
   ) => Promise<readonly AuditEntry[]>;
   readonly session: AuditReadSession | null;
 }
 
-const auditCodeFor = (error: unknown): string | undefined =>
-  error instanceof TRPCError ? error.code : undefined;
-
-const tAudit = initTRPC.context<AuditContext>().create({
-  errorFormatter: ({ shape, error }) => ({
-    ...shape,
-    data: { ...shape.data, code: auditCodeFor(error) ?? shape.data.code },
-  }),
-});
-
 // Read is gated to admin/superadmin. A denial NEVER reads any rows (it throws
 // before the query leg), so a non-admin caller leaks nothing.
-const auditReadProcedure = tAudit.procedure.use(({ ctx, next }) => {
+const auditReadProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
@@ -240,11 +237,14 @@ const auditReadProcedure = tAudit.procedure.use(({ ctx, next }) => {
 
 // Read-only by construction: the router exposes ONLY `list`. No procedure updates,
 // redacts, or clears audit rows — immutability is not undermined by the API surface.
-export const auditRouter = tAudit.router({
+export const auditRouter = t.router({
   list: auditReadProcedure
     .input(auditListInput)
     .query(async ({ ctx, input }) => ({
-      entries: await ctx.readAuditEntries(input),
+      entries: await requireSink(
+        ctx.readAuditEntries,
+        "readAuditEntries"
+      )(input),
     })),
 });
 

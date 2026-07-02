@@ -19,13 +19,19 @@ const MAX_REDIRECT_HOPS = 5;
 // Host-pinned allowlist, sourced from the deployment topology — not invented:
 //   - the cloud gatekeeper Worker (the daemon's single cloud egress target),
 //   - the updater host (release-channel downloads),
-//   - the GitHub + Google OAuth authorization + token hosts.
-// Add the Sentry-ingest host here at deploy time. The breach-range API is
-// intentionally excluded: breach checks run on the cloud authority, so that
-// egress belongs to the Worker, not the daemon — add it here only if a
-// daemon-side breach-check path is actually built. The OAuth-provider host
-// strings are a deploy-time host-set; the host-pinned-HTTPS contract is what
+//   - the GitHub + Google OAuth authorization + token hosts,
+//   - the Sentry ingest host — the daemon's hand-rolled envelope reporter POSTs
+//     here through `guardedFetch`, so the ingest host MUST be pinned or the report
+//     is blocked. `SENTRY_INGEST_HOST` is the canonical SaaS ingest apex; a
+//     deployment using an org-specific host (`o<org>.ingest.<region>.sentry.io`)
+//     or a self-hosted Sentry adds THAT exact host here at deploy time.
+// The breach-range API is intentionally excluded: breach checks run on the cloud
+// authority, so that egress belongs to the Worker, not the daemon — add it here
+// only if a daemon-side breach-check path is actually built. The OAuth-provider
+// host strings are a deploy-time host-set; the host-pinned-HTTPS contract is what
 // this allowlist enforces.
+export const SENTRY_INGEST_HOST = "ingest.sentry.io";
+
 export const EGRESS_ALLOWLIST: readonly string[] = [
   "api.perryts.com",
   "hub.perryts.com",
@@ -33,6 +39,7 @@ export const EGRESS_ALLOWLIST: readonly string[] = [
   "api.github.com",
   "accounts.google.com",
   "oauth2.googleapis.com",
+  SENTRY_INGEST_HOST,
 ];
 
 // Emit a structured audit record for a blocked egress attempt. A blocked

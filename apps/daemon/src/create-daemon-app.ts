@@ -1,5 +1,9 @@
 import { readFileSync, statSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
+import {
+  buildContentSecurityPolicy,
+  STATIC_SECURITY_HEADERS,
+} from "@perry-starter/env/security-headers";
 import fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 
 // The headless daemon's HTTP host: it serves the built TanStack Start SPA/static
@@ -58,6 +62,21 @@ const contentTypeFor = (filePath: string): string => {
 const isApiPath = (pathname: string): boolean =>
   API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
+// Attach the full static security header set to a daemon response. The
+// content-type is deliberately left to `reply.type()` (never moved here — the
+// daemon's fastify silently forces it to application/json through the header
+// setter). Because the daemon serves a PREBUILT static SPA shell with no
+// per-request SSR, it cannot mint or thread a per-response nonce, so its CSP is
+// the STATIC fallback (no nonce) — which STILL names the Turnstile host so the
+// CAPTCHA widget loads. The kit does not claim uniform nonce-CSP across the
+// Worker and the daemon surfaces; the daemon's is the honest static variant.
+const applyDaemonSecurityHeaders = (reply: FastifyReply): void => {
+  for (const [name, value] of Object.entries(STATIC_SECURITY_HEADERS)) {
+    reply.header(name, value);
+  }
+  reply.header("Content-Security-Policy", buildContentSecurityPolicy());
+};
+
 const isFile = (candidate: string): boolean => {
   try {
     return statSync(candidate).isFile();
@@ -105,6 +124,11 @@ export const createDaemonApp = (config: DaemonAppConfig): FastifyInstance => {
 
   const serveStaticOrShell = (url: string, reply: FastifyReply): void => {
     const pathname = pathnameOf(url);
+
+    // The security header pass runs on EVERY branch below — asset, shell, and
+    // the api-namespace 404 alike — so no response the static host emits (incl.
+    // errors) ships unheadered. Content-type still rides `reply.type()`.
+    applyDaemonSecurityHeaders(reply);
 
     // Allow-list: a local-API request is never rewritten to the shell. With no
     // native handler registered it is a plain 404 — still not the shell.

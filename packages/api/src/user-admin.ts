@@ -34,8 +34,11 @@ import {
   type UserStatus,
   userStatusSchema,
 } from "@perry-starter/db/shapes/identity";
-import { initTRPC, TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
+import { requireSink } from "./fail-closed";
+import { t } from "./index";
 
 // --- The revocation surface set (both legs) ----------------------------------
 
@@ -256,24 +259,60 @@ export interface StatusUpdateSql {
 // Build the soft status flip. It is an UPDATE (never a DELETE/REMOVE): the row
 // survives, so a deactivate is fully reversible. The status is a closed-set enum
 // literal (safe to inline); the user id travels as a bound $var.
-const buildStatusUpdateSql = (
+export const buildSetStatusSql = (
   userId: string,
   status: UserStatus
 ): StatusUpdateSql => {
   if (!SAFE_ID_RE.test(userId)) {
     throw new Error("user id must be a safe record-id key");
   }
+  const validStatus = userStatusSchema.parse(status);
   return {
-    query: `UPDATE type::record('user', $id) SET status = '${status}' RETURN AFTER;`,
+    query: `UPDATE type::record('user', $id) SET status = '${validStatus}' RETURN AFTER;`,
     vars: { id: userId },
   };
 };
 
 export const buildDeactivateSql = (userId: string): StatusUpdateSql =>
-  buildStatusUpdateSql(userId, "deactivated");
+  buildSetStatusSql(userId, "deactivated");
 
 export const buildReactivateSql = (userId: string): StatusUpdateSql =>
-  buildStatusUpdateSql(userId, "active");
+  buildSetStatusSql(userId, "active");
+
+// Build the role flip (the superadmin-only role assignment applied server-side). It
+// is an UPDATE (the row survives); the requested role is a closed-set enum literal
+// (re-validated through the identity schema, so it is safe to inline), and the user
+// id travels as a bound $var. It is NOT a hard delete, so `isSoftDeleteSql` on a
+// generated role flip is irrelevant — the escalation authority (evaluateRoleAssignment)
+// is what gates WHICH role may be stamped; this only renders the accepted flip.
+export const buildSetRoleSql = (
+  userId: string,
+  role: AppRole
+): StatusUpdateSql => {
+  if (!SAFE_ID_RE.test(userId)) {
+    throw new Error("user id must be a safe record-id key");
+  }
+  const validRole = appRoleSchema.parse(role);
+  return {
+    query: `UPDATE type::record('user', $id) SET role = '${validRole}' RETURN AFTER;`,
+    vars: { id: userId },
+  };
+};
+
+// Build the target-session revocation: DELETE the target user's session rows. This
+// is the CLOUD-surface revocation (the session store the gatekeeper owns). The
+// LOCAL-surface revocation rides the existing revocation signal the local daemon
+// already consumes; this builder covers only the cloud session store. The user id
+// travels as a bound $var, never spliced into the statement body.
+export const buildRevokeUserSessionsSql = (userId: string): StatusUpdateSql => {
+  if (!SAFE_ID_RE.test(userId)) {
+    throw new Error("user id must be a safe record-id key");
+  }
+  return {
+    query: "DELETE session WHERE userId = $uid;",
+    vars: { uid: userId },
+  };
+};
 
 // A guard proving the deactivate is a SOFT delete: it UPDATEs the status field and
 // never issues a hard DELETE/REMOVE. A builder that ever emitted a hard delete
@@ -299,21 +338,26 @@ export interface UserAdminContext {
   ) => Promise<readonly UserListEntry[]>;
   // Injected clock so the step-up TTL boundary is driven deterministically.
   readonly now: number;
+  // Appends the consequent admin-action audit event. Forwarder-backed on the served
+  // surface (a real append), so it is awaited and returns a promise; the resolver
+  // resolves it fail-closed via `requireSink` BEFORE the mutation, so a privileged
+  // mutation can never proceed without its audit wired.
   readonly recordConsequentAudit: (event: {
     readonly actor: string;
     readonly action: string;
-    readonly target: string;
-  }) => void;
+    readonly target?: string;
+  }) => Promise<void> | void;
   // A failed step-up routes through the SAME shared per-subject lockout seam as a
   // failed login (one counter).
   readonly recordLockoutFailure: (subject: string) => void;
   // Audit is outermost: every step-up attempt records actor/action/outcome, and a
-  // granted mutation ALSO audits its consequent action against the target.
+  // granted mutation ALSO audits its consequent action against the target. Resolved
+  // fail-closed via `requireSink` at the top of the step-up gate.
   readonly recordStepUpAudit: (event: {
     readonly action: DangerousAction;
     readonly actor: string;
     readonly outcome: "granted" | "challenged" | "rejected";
-  }) => void;
+  }) => Promise<void> | void;
   // The ACTOR session-revoke seam a step-up FAILURE must NEVER call — a cancel /
   // fail-twice aborts only the action, never the session. Present so a test can
   // prove it stays untouched (distinct from revokeUserSessions, which targets the
@@ -340,21 +384,6 @@ export interface UserAdminContext {
   readonly stepUpToken?: string;
 }
 
-const codeForError = (error: unknown): string | undefined => {
-  if (error instanceof TRPCError) {
-    const cause = error.cause as { code?: string } | undefined;
-    return cause?.code ?? error.code;
-  }
-  return;
-};
-
-const tUserAdmin = initTRPC.context<UserAdminContext>().create({
-  errorFormatter: ({ shape, error }) => ({
-    ...shape,
-    data: { ...shape.data, code: codeForError(error) ?? shape.data.code },
-  }),
-});
-
 const GENERIC_FORBIDDEN = "Insufficient role for this scope";
 
 // Throw the nearest native FORBIDDEN carrying STEP_UP_REQUIRED in shape.data.code.
@@ -366,14 +395,34 @@ const stepUpRequired = (): never => {
   });
 };
 
+// The structural subset of the unified context the step-up decision reads. The
+// audit/lockout recorders are optional (a tier that has not wired them records
+// nothing rather than throwing — the step-up gate itself still fails closed); the
+// grant store is required at use through `requireSink`, so a tier with no store
+// challenges rather than silently granting.
+interface StepUpConsumeCtx {
+  readonly now?: number;
+  readonly recordLockoutFailure?: UserAdminContext["recordLockoutFailure"];
+  readonly recordStepUpAudit?: UserAdminContext["recordStepUpAudit"];
+  readonly session: UserAdminSession | null;
+  readonly stepUpStore?: StepUpGrantStore;
+  readonly stepUpToken?: string;
+}
+
 // The step-up decision, shared by the guarded mutations. Audits every attempt and
 // throws STEP_UP_REQUIRED on the challenge/rejection; on a rejection it also routes
 // through the shared lockout seam. It NEVER touches the actor's session. Returns
 // only on a granted, freshly-consumed grant.
-const consumeStepUp = (
-  ctx: UserAdminContext,
+//
+// The step-up audit sink is resolved fail-closed (`requireSink`) up front, so a
+// dangerous mutation can never proceed — or even be challenged — without its step-up
+// audit wired: the served surface fails closed on a missing audit sink exactly as it
+// does on a missing data sink (symmetric, never an audit fail-open). The session gate
+// still runs first, so UNAUTHORIZED precedes the sink guard.
+const consumeStepUp = async (
+  ctx: StepUpConsumeCtx,
   action: DangerousAction
-): void => {
+): Promise<void> => {
   if (!ctx.session) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
@@ -381,26 +430,31 @@ const consumeStepUp = (
     });
   }
   const actor = ctx.session.user.id;
+  const recordStepUpAudit = requireSink(
+    ctx.recordStepUpAudit,
+    "recordStepUpAudit"
+  );
   if (ctx.stepUpToken === undefined) {
-    ctx.recordStepUpAudit({ action, actor, outcome: "challenged" });
+    await recordStepUpAudit({ action, actor, outcome: "challenged" });
     stepUpRequired();
   }
-  const result = ctx.stepUpStore.verifyAndConsume({
+  const store = requireSink(ctx.stepUpStore, "stepUpStore");
+  const result = store.verifyAndConsume({
     action,
-    now: ctx.now,
+    now: ctx.now ?? Date.now(),
     sessionId: ctx.session.id,
     token: ctx.stepUpToken,
   });
   if (!result.granted) {
-    ctx.recordStepUpAudit({ action, actor, outcome: "rejected" });
-    ctx.recordLockoutFailure(actor);
+    await recordStepUpAudit({ action, actor, outcome: "rejected" });
+    ctx.recordLockoutFailure?.(actor);
     stepUpRequired();
   }
-  ctx.recordStepUpAudit({ action, actor, outcome: "granted" });
+  await recordStepUpAudit({ action, actor, outcome: "granted" });
 };
 
 // Session-only base: narrows the session non-null for downstream legs.
-const sessionProcedure = tUserAdmin.procedure.use(({ ctx, next }) => {
+const sessionProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
@@ -449,13 +503,15 @@ export const USER_ADMIN_STEP_UP_PROCEDURES = {
   deactivateUser: "user.ban",
 } as const satisfies Record<string, DangerousAction>;
 
-export const userAdminRouter = tUserAdmin.router({
+export const userAdminRouter = t.router({
   // The admin-tier keyset user list (never OFFSET). A member is denied at the
-  // admin gate; an admin/superadmin reads the keyset page.
+  // admin gate; an admin/superadmin reads the keyset page through the injected
+  // forwarder — absent on a tier with no SurrealDB binding, so the read FAILS CLOSED
+  // (throws) rather than returning an empty page a client could misread as authorized.
   listUsers: adminProcedure
     .input(userListFilterSchema)
     .query(async ({ ctx, input }) => ({
-      users: await ctx.listUsers(input),
+      users: await requireSink(ctx.listUsers, "listUsers")(input),
     })),
 
   // Superadmin-only role assignment, step-up-guarded. A non-superadmin is denied
@@ -464,8 +520,8 @@ export const userAdminRouter = tUserAdmin.router({
   // (target, role) — rejecting every escalation — then applies it, revokes the
   // TARGET's sessions across both surfaces, and audits `admin.role_change`.
   changeRole: superadminProcedure
-    .use(({ ctx, next }) => {
-      consumeStepUp(ctx, "role.change");
+    .use(async ({ ctx, next }) => {
+      await consumeStepUp(ctx, "role.change");
       return next({ ctx: { ...ctx, session: ctx.session } });
     })
     .input(roleChangeInput)
@@ -483,12 +539,28 @@ export const userAdminRouter = tUserAdmin.router({
           message: GENERIC_FORBIDDEN,
         });
       }
-      await ctx.setUserRole({ role: input.role, userId: input.targetUserId });
-      await ctx.revokeUserSessions({
+      // Fail-closed audit-sink check BEFORE the mutation: a role change can never
+      // mutate without its consequent audit wired (resolved after the authorization
+      // verdict, so a forbidden escalation is still FORBIDDEN, not a sink-guard leak).
+      const recordConsequentAudit = requireSink(
+        ctx.recordConsequentAudit,
+        "recordConsequentAudit"
+      );
+      await requireSink(
+        ctx.setUserRole,
+        "setUserRole"
+      )({
+        role: input.role,
+        userId: input.targetUserId,
+      });
+      await requireSink(
+        ctx.revokeUserSessions,
+        "revokeUserSessions"
+      )({
         surfaces: REVOCATION_SURFACES,
         userId: input.targetUserId,
       });
-      ctx.recordConsequentAudit({
+      await recordConsequentAudit({
         action: "admin.role_change",
         actor: ctx.session.user.id,
         target: input.targetUserId,
@@ -501,8 +573,8 @@ export const userAdminRouter = tUserAdmin.router({
   // target's sessions across both surfaces, and audits `admin.user_deactivated`. A
   // deactivate can never target the actor's own row (no self-lockout).
   deactivateUser: adminProcedure
-    .use(({ ctx, next }) => {
-      consumeStepUp(ctx, "user.ban");
+    .use(async ({ ctx, next }) => {
+      await consumeStepUp(ctx, "user.ban");
       return next({ ctx: { ...ctx, session: ctx.session } });
     })
     .input(targetInput)
@@ -510,15 +582,27 @@ export const userAdminRouter = tUserAdmin.router({
       if (input.targetUserId === ctx.session.user.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: GENERIC_FORBIDDEN });
       }
-      await ctx.setUserStatus({
+      // Fail-closed audit-sink check BEFORE the soft flip: a deactivate can never
+      // mutate without its consequent audit wired (after the self-target FORBIDDEN).
+      const recordConsequentAudit = requireSink(
+        ctx.recordConsequentAudit,
+        "recordConsequentAudit"
+      );
+      await requireSink(
+        ctx.setUserStatus,
+        "setUserStatus"
+      )({
         status: "deactivated",
         userId: input.targetUserId,
       });
-      await ctx.revokeUserSessions({
+      await requireSink(
+        ctx.revokeUserSessions,
+        "revokeUserSessions"
+      )({
         surfaces: REVOCATION_SURFACES,
         userId: input.targetUserId,
       });
-      ctx.recordConsequentAudit({
+      await recordConsequentAudit({
         action: "admin.user_deactivated",
         actor: ctx.session.user.id,
         target: input.targetUserId,
@@ -531,8 +615,20 @@ export const userAdminRouter = tUserAdmin.router({
   reactivateUser: adminProcedure
     .input(targetInput)
     .mutation(async ({ ctx, input }) => {
-      await ctx.setUserStatus({ status: "active", userId: input.targetUserId });
-      ctx.recordConsequentAudit({
+      // Fail-closed audit-sink check BEFORE the soft flip back: a reactivate can
+      // never mutate without its consequent audit wired.
+      const recordConsequentAudit = requireSink(
+        ctx.recordConsequentAudit,
+        "recordConsequentAudit"
+      );
+      await requireSink(
+        ctx.setUserStatus,
+        "setUserStatus"
+      )({
+        status: "active",
+        userId: input.targetUserId,
+      });
+      await recordConsequentAudit({
         action: "admin.user_reactivated",
         actor: ctx.session.user.id,
         target: input.targetUserId,

@@ -48,6 +48,21 @@ const serverEnvShape = {
   GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  // The Cloudflare Turnstile SECRET for SERVER-SIDE siteverify (the CAPTCHA tier
+  // of the progressive lockout). Cloud-authority-only: bound on the gatekeeper
+  // Worker via alchemy.secret(); the relay tier holds none, so it is optional on
+  // the contract and a relay boot still validates.
+  TURNSTILE_SECRET: z.string().min(1).optional(),
+  // Sentry observability config, per-environment (isolated dev/staging/prod each
+  // carry their own DSN + environment tag). Optional on the contract: an absent DSN
+  // disables sending (each tier no-ops), so a boot without Sentry still validates.
+  // The sample rates are coerced (env values are strings) and
+  // bounded 0..1 with production-safe defaults; SENTRY_ENVIRONMENT tags events per
+  // environment. Read by apps/web's validated Sentry init — never raw process.env.
+  SENTRY_DSN: z.url().optional(),
+  SENTRY_ENVIRONMENT: z.string().min(1).default("development"),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+  SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),

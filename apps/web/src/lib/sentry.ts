@@ -1,7 +1,12 @@
+import { scrubSecrets } from "@perry-starter/env/scrub";
+import { env } from "@perry-starter/env/server";
 import {
   type Breadcrumb,
   close,
+  type ErrorEvent,
   init,
+  type Log,
+  pinoIntegration,
   type SeverityLevel,
   addBreadcrumb as sentryAddBreadcrumb,
   captureException as sentryCaptureException,
@@ -12,15 +17,36 @@ import {
 } from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
-// Sentry configuration from environment variables
-const dsn = process.env.SENTRY_DSN;
-const environment = process.env.SENTRY_ENVIRONMENT || "development";
-const tracesSampleRate = Number.parseFloat(
-  process.env.SENTRY_TRACES_SAMPLE_RATE || "1.0"
-);
-const profilesSampleRate = Number.parseFloat(
-  process.env.SENTRY_PROFILES_SAMPLE_RATE || "0.1"
-);
+// Sentry configuration from the VALIDATED env contract (never raw process.env):
+// SENTRY_* live in @perry-starter/env, coerced + bounded, per-environment tagged.
+const dsn = env.SENTRY_DSN;
+const environment = env.SENTRY_ENVIRONMENT;
+const tracesSampleRate = env.SENTRY_TRACES_SAMPLE_RATE;
+const profilesSampleRate = env.SENTRY_PROFILES_SAMPLE_RATE;
+
+// The NFR redaction hooks. `scrubSecrets` is the ONE shared deny-list scrubber
+// (also used by the daemon reporter): a secret-bearing attribute is stripped
+// before the log/event leaves this process — a token/password/cookie never
+// reaches Sentry. Logs keep their event type + actor; secrets are redacted.
+const redactLog = (log: Log): Log => {
+  if (log.attributes) {
+    log.attributes = scrubSecrets(log.attributes);
+  }
+  return log;
+};
+
+const redactEvent = (event: ErrorEvent): ErrorEvent => {
+  if (event.extra) {
+    event.extra = scrubSecrets(event.extra);
+  }
+  if (event.contexts) {
+    event.contexts = scrubSecrets(event.contexts);
+  }
+  if (event.request) {
+    event.request = scrubSecrets(event.request);
+  }
+  return event;
+};
 
 /**
  * Initialize Sentry for error tracking and performance monitoring
@@ -43,10 +69,20 @@ export function initSentry(): void {
   init({
     dsn,
     environment,
+    // `enableLogs` is a TOP-LEVEL option (not `_experiments`); pino → Sentry log
+    // forwarding only flows when it is on.
+    enableLogs: true,
     integrations: [
       // Add profiling integration for performance insights
       nodeProfilingIntegration(),
+      // Bridge pino → Sentry. `error.levels` defaults to [] — without it, pino
+      // errors forward as logs but never as Sentry exception events.
+      pinoIntegration({ error: { levels: ["error", "fatal"] } }),
     ],
+    // NFR redaction: strip secret-bearing attributes from every log and event
+    // before send (the load-bearing "never payload/secrets" control).
+    beforeSendLog: redactLog,
+    beforeSend: redactEvent,
     // Performance Monitoring
     tracesSampleRate,
     // Set sampling rate for profiling - this is relative to tracesSampleRate

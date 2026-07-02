@@ -257,7 +257,7 @@ describe("the audit trail is append-only and admin-scoped at the SurrealDB row l
       // ...and is ALSO denied at the tRPC middleware layer (two-layer perimeter).
       const captured = await createAuditReadCaller({
         readAuditEntries: () => Promise.resolve([]),
-        session: { user: { id: "user:m", role: "member" } },
+        session: { id: "sess:m", user: { id: "user:m", role: "member" } },
       })
         .list({ limit: 50 })
         .then(() => "granted")

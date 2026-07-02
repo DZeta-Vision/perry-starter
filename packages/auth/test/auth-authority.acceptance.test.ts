@@ -58,7 +58,12 @@ const ES256_KEYPAIR_RE = /keyPairConfig\s*:\s*\{[^}]*alg\s*:\s*["']ES256["']/;
 const EDDSA_ALG_RE = /alg\s*:\s*["']EdDSA["']/;
 const CREATE_ACCESS_CONTROL_RE = /createAccessControl\s*\(/g;
 const ORG_PLUGIN_AC_RE = /organization\s*\(\s*\{[^}]*\bac\b/;
-const ADMIN_PLUGIN_AC_RE = /admin\s*\(\s*\{[^}]*\bac\b/;
+// The admin plugin reads the SAME `ac` via the extracted `adminPluginOptions` object
+// (extracted so the hard-delete-block gate can assert the impersonation/hard-delete
+// bypass surfaces stay unset). Proving the single matrix reaches admin means the
+// options object carries `ac` AND the admin plugin is fed exactly those options.
+const ADMIN_PLUGIN_OPTIONS_AC_RE = /adminPluginOptions\s*=\s*\{[^}]*\bac\b/;
+const ADMIN_PLUGIN_USES_OPTIONS_RE = /admin\s*\(\s*adminPluginOptions\s*\)/;
 const SURREAL_ADAPTER_RE = /createAdapterFactory\s*\(/;
 const SURREAL_ADAPTER_ID_RE = /adapterId\s*:\s*["']surreal["']/;
 const SURREAL_ENV_RE = /SURREAL_URL/;
@@ -176,7 +181,10 @@ describe("one access-control matrix and the global role hierarchy are single-sou
     // Single source: createAccessControl is called once; both org + admin read it.
     expect(countMatches(CREATE_ACCESS_CONTROL_RE, source)).toBe(1);
     expect(ORG_PLUGIN_AC_RE.test(source)).toBe(true);
-    expect(ADMIN_PLUGIN_AC_RE.test(source)).toBe(true);
+    // The admin plugin reads that one `ac` via `adminPluginOptions` (which carries it)
+    // and is fed exactly those options — no second matrix.
+    expect(ADMIN_PLUGIN_OPTIONS_AC_RE.test(source)).toBe(true);
+    expect(ADMIN_PLUGIN_USES_OPTIONS_RE.test(source)).toBe(true);
   });
 
   test("two divergent access-control matrices across the plugins are flagged", () => {

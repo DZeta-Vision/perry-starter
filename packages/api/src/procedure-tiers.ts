@@ -18,11 +18,33 @@ import { appRouter } from "./routers/index";
 
 export type ProcedureTier = "public" | "auth" | "admin";
 
-// The authoritative tier of every appRouter procedure path.
+// The authoritative tier of every appRouter procedure path. The admin/compliance
+// sub-routers are role-gated in their own middleware — classified `admin` here so an
+// admin page reads their data only through a role-gated tier. `stepUp.readSettings`
+// is a benign session-only op (`auth`); `invitation.acceptInvitation` is the
+// sessionless invitee accept (`public`).
 export const PROCEDURE_TIERS: Record<string, ProcedureTier> = {
   "admin.summary": "admin",
+  "audit.list": "admin",
+  // Self-service data export is an authenticated (non-admin) subject right — the
+  // procedure is self-scoped to the session subject, so it sits behind `auth`.
+  "compliance.exportMyData": "auth",
+  // Self-service erasure is an authenticated (non-admin) subject right, self-scoped
+  // to the session subject AND step-up-guarded — it sits behind `auth`.
+  "erasure.requestErasure": "auth",
   healthCheck: "public",
+  "invitation.acceptInvitation": "public",
+  "invitation.createInvitation": "admin",
+  "invitation.resendInvitation": "admin",
+  "invitation.revokeInvitation": "admin",
   privateData: "auth",
+  "stepUp.changeRole": "admin",
+  "stepUp.createInvitation": "admin",
+  "stepUp.readSettings": "auth",
+  "userAdmin.changeRole": "admin",
+  "userAdmin.deactivateUser": "admin",
+  "userAdmin.listUsers": "admin",
+  "userAdmin.reactivateUser": "admin",
 };
 
 // The flat set of the router's real procedure paths (dotted for sub-routers).

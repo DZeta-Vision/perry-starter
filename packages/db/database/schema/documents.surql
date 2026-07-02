@@ -58,6 +58,14 @@ DEFINE FIELD created_at ON user TYPE datetime DEFAULT time::now() READONLY;
 -- them (an as-yet-inactive or self-registered account carries neither).
 DEFINE FIELD last_active ON user TYPE option<datetime>;
 DEFINE FIELD invited_by ON user TYPE option<string>;
+-- Erasure tombstones — OPTIONAL/unset on a live account. The GDPR erasure request
+-- stamps these (and flips status to 'deactivated') via a SOFT UPDATE, never a row
+-- DELETE, so an erased account survives (recoverable) until the scheduled
+-- crypto-shred. deletedAt marks the soft-delete instant; erasureRequestedAt marks
+-- when the subject requested erasure. A hard DELETE is blocked upstream (the
+-- better-auth beforeDelete hook throws), so no path removes the row.
+DEFINE FIELD deletedAt ON user TYPE option<datetime>;
+DEFINE FIELD erasureRequestedAt ON user TYPE option<datetime>;
 
 DEFINE INDEX user_email ON user FIELDS email UNIQUE;
 
@@ -264,3 +272,36 @@ DEFINE INDEX idx_invitation_token ON invitation FIELDS token_hash UNIQUE;
 -- Range-back the auto-expiry / cleanup sweep (WHERE status = 'pending' AND
 -- expires_at < $now) — an index-backed range walk, never a full table scan.
 DEFINE INDEX idx_invitation_status_expires ON invitation FIELDS status, expires_at;
+
+-- The per-subject crypto-shred key registry — the FOURTH, independent key class. When a
+-- subject requests GDPR erasure their account is SOFT-deleted (the user tombstones
+-- above) and registered HERE for the scheduled crypto-shred. The registry holds an
+-- INDEPENDENTLY-generated per-subject key handle (its own key class, never derived
+-- from or shared with the token-at-rest envelope key, the ES256 JWKS, or any other
+-- class); shredding that key renders the subject's at-rest ciphertext unrecoverable
+-- WITHOUT touching the immutable audit log. The table is SEALED (PERMISSIONS NONE):
+-- no record-access session — not even the subject — reads or mutates a row directly;
+-- registration runs in the privileged system forwarder that bypasses row PERMISSIONS
+-- (mirroring recovery_code / invitation). The concrete crypto-shred MECHANISM is
+-- DEFERRED (design-only): shredded_at stays null — this story ships the registry
+-- surface and the soft-delete direction, and claims no actual cryptographic
+-- destruction.
+DEFINE TABLE erasure_shred_subject SCHEMAFULL PERMISSIONS NONE;
+
+-- The erased subject (one registry row per subject; UNIQUE below).
+DEFINE FIELD subject_ref ON erasure_shred_subject TYPE record<user>;
+-- The key-class marker — always the 4th class ('crypto-shred'), pinned by ASSERT so
+-- a row can never mis-tag its key class.
+DEFINE FIELD key_class ON erasure_shred_subject TYPE string
+  ASSERT $value = 'crypto-shred';
+-- The independently-generated per-subject shred-key handle (never any other class's
+-- material). Sealed with the table so no scoped session reads it.
+DEFINE FIELD key_handle ON erasure_shred_subject TYPE string;
+-- When the subject was registered for crypto-shred (the erasure request instant).
+DEFINE FIELD registered_at ON erasure_shred_subject TYPE datetime DEFAULT time::now() READONLY;
+-- The irreversible-shred marker: null until the DEFERRED crypto-shred mechanism
+-- runs. This story never sets it (no actual destruction is claimed).
+DEFINE FIELD shredded_at ON erasure_shred_subject TYPE option<datetime>;
+
+-- One registry row per subject; a re-request converges on the same row.
+DEFINE INDEX idx_erasure_shred_subject ON erasure_shred_subject FIELDS subject_ref UNIQUE;
