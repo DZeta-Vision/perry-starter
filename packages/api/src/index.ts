@@ -2,7 +2,11 @@ import {
   CHANGE_PASSWORD_PATH,
   evaluateForcedPasswordChange,
 } from "@perry-starter/auth/forced-password-change";
-import { resolveGlobalRoles, roles } from "@perry-starter/auth/rbac";
+import {
+  holdsAdminSurface,
+  resolveGlobalRoles,
+  roles,
+} from "@perry-starter/auth/rbac";
 import { initTRPC, TRPCError } from "@trpc/server";
 
 import type { Context } from "./context";
@@ -27,6 +31,24 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
       session: ctx.session,
     },
   });
+});
+
+// The admin-tier (role-gated) procedure — the tRPC leg of the admin-surface
+// authorization, mirrored by the SurrealDB row PERMISSIONS. Layered on the session
+// check, it admits ONLY a GLOBAL role the ONE matrix grants the admin-surface
+// `user:list` capability (admin/superadmin); a member is denied FORBIDDEN with the
+// generic neutral message (no role enumeration). Both this leg and the checkpoint
+// call `holdsAdminSurface`, so an admin page's data path is role-gated at the same
+// matrix decision the checkpoint uses — never an auth-only tier.
+export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const role = (ctx.session.user as { role?: string }).role ?? "";
+  if (!holdsAdminSurface(role)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Insufficient role for this scope",
+    });
+  }
+  return next();
 });
 
 // --- The tRPC RBAC middleware leg (the first authorization layer) ------------

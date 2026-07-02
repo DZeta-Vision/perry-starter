@@ -97,6 +97,31 @@ export const roleParity = (
   return { parity: drifts.length === 0, drifts };
 };
 
+// The admin-surface capability — the ONE matrix's `user:list` (admin tier). It is
+// held by admin/superadmin and NOT by member, so it is the single-sourced hinge
+// the fail-closed admin checkpoint AND the auth library's admin role map both
+// derive from. Deriving both from THIS forbids a divergent admin role.
+export const ADMIN_SURFACE_CAPABILITY = { user: ["list"] } as const;
+
+// The tiers that clear the admin-surface checkpoint: exactly those the ONE matrix
+// grants `user:list`. Fed to the admin() plugin's `adminRoles` so the auth library
+// never introduces an admin role the matrix does not sanction, and read by the
+// checkpoint so its role decision is the SAME matrix decision.
+export const adminTierRoles = (): Tier[] =>
+  TIERS.filter(
+    (tier) => ROLES[tier].authorize(ADMIN_SURFACE_CAPABILITY, "AND").success
+  );
+
+// Whether a GLOBAL role claim (comma-split) resolves to any admin-surface tier —
+// the checkpoint's role decision, keyed on the GLOBAL claim, never an org role.
+export const holdsAdminSurface = (roleClaim: string): boolean =>
+  resolveGlobalRoles({ user: { role: roleClaim } }).some((tier) => {
+    const role = ROLES[tier as Tier];
+    return role
+      ? role.authorize(ADMIN_SURFACE_CAPABILITY, "AND").success
+      : false;
+  });
+
 // Whether a tier holds the superadmin-only `user:set-role` capability.
 const holdsSetRole = (tier: Tier): boolean =>
   (ROLES[tier].statements.user ?? []).includes("set-role");

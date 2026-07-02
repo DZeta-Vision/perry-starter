@@ -87,6 +87,16 @@ export const roles = {
   }),
 };
 
+// The admin-tier role set — DERIVED from the ONE matrix (the tiers the matrix
+// grants the admin-surface `user:list` capability), never a hand-typed literal.
+// It is fed to the admin() plugin's `adminRoles` below so the auth library's
+// admin role map IS the matrix's; a divergent admin role cannot be introduced.
+// The fail-closed admin checkpoint derives the SAME decision from `rbac.ts`
+// (`adminTierRoles`/`holdsAdminSurface`), keyed on the same `user:list` hinge.
+export const ADMIN_TIER_ROLES: string[] = (
+  ["member", "admin", "superadmin"] as const
+).filter((tier) => roles[tier].authorize({ user: ["list"] }, "AND").success);
+
 // Re-exposed from the single-sourced db shape (member:0 < admin:1 < superadmin:2).
 export const APP_ROLE_RANK = APP_ROLE_RANK_SOURCE;
 
@@ -564,7 +574,10 @@ export const buildAuthOptions = (
       ac,
       roles,
       defaultRole: "member",
-      adminRoles: ["admin", "superadmin"],
+      // Matrix-derived admin role set (the tiers holding `user:list`) — NOT a
+      // hand-typed literal — so the auth library never sanctions an admin role the
+      // one matrix does not, and the fail-closed checkpoint reads the same set.
+      adminRoles: ADMIN_TIER_ROLES,
     }),
     tanstackStartCookies(),
   ],
