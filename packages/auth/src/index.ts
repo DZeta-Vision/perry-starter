@@ -38,6 +38,7 @@ import {
   RESET_PASSWORD_TOKEN_TTL_SECONDS,
   resetEmailSender,
 } from "./reset-email";
+import { isResetScopeValue } from "./reset-token-scope";
 import { surrealAdapter } from "./surreal-adapter";
 import {
   dispatchVerificationEmail,
@@ -86,6 +87,16 @@ export const roles = {
     audit: ["read"],
   }),
 };
+
+// The admin-tier role set — DERIVED from the ONE matrix (the tiers the matrix
+// grants the admin-surface `user:list` capability), never a hand-typed literal.
+// It is fed to the admin() plugin's `adminRoles` below so the auth library's
+// admin role map IS the matrix's; a divergent admin role cannot be introduced.
+// The fail-closed admin checkpoint derives the SAME decision from `rbac.ts`
+// (`adminTierRoles`/`holdsAdminSurface`), keyed on the same `user:list` hinge.
+export const ADMIN_TIER_ROLES: string[] = (
+  ["member", "admin", "superadmin"] as const
+).filter((tier) => roles[tier].authorize({ user: ["list"] }, "AND").success);
 
 // Re-exposed from the single-sourced db shape (member:0 < admin:1 < superadmin:2).
 export const APP_ROLE_RANK = APP_ROLE_RANK_SOURCE;
@@ -409,16 +420,23 @@ const sendResetPasswordEmail = async (
 // /request-password-reset mints a fresh token and leaves any earlier one valid
 // until it independently expires or is consumed, so two mailed reset links can
 // be redeemable at once. We close that window on the verification-store create
-// seam — the ONLY place a reset token is persisted. Before a new verification
-// value is written, delete every prior verification row carrying the same
-// `value` (the user id the reset flow stores). The reset flow is the SOLE
-// verification-store consumer in this configuration — email verification uses a
-// stateless signed JWT and never touches this table — so matching on the user-id
-// `value` targets exactly that user's outstanding reset tokens. The new row is
-// not created until this `before` hook returns, so only PRIOR tokens are removed;
-// a freshly issued token immediately invalidates any earlier one. Reached via the
-// same `context.context.adapter` seam the personal-org provisioning uses; the
-// hook narrows internally so it fits the better-auth slot regardless of signature.
+// seam — the place a reset token is persisted. Before a new verification value is
+// written, delete every PRIOR reset-scope row for the same reset target. The new
+// row is not created until this `before` hook returns, so only PRIOR tokens are
+// removed; a freshly issued token immediately invalidates any earlier one.
+//
+// SCOPING (see ./reset-token-scope): mandatory-2FA enrolment adds a SECOND
+// user-keyed verification writer (the pending-enrolment marker), so this purge is
+// no longer allowed to sweep every row for the user. The store persists the
+// identifier HASHED — and the create hook observes it already hashed — so the
+// purge cannot scope by a literal `reset-password:` identifier prefix; the
+// equivalent scoping is realized on the `value` axis. A reset token keeps the bare
+// reset-target value; the two-factor enrolment marker lives under a distinct
+// namespace. So the purge (a) fires ONLY for a reset-scope creation and (b)
+// deletes ONLY rows under that bare value — a two-factor / recovery enrolment row
+// is never in the delete set. Reached via the same `context.context.adapter` seam
+// the personal-org provisioning uses; the hook narrows internally so it fits the
+// better-auth slot regardless of signature.
 const invalidatePriorResetTokens = async (
   verification: unknown,
   context?: unknown
@@ -426,13 +444,18 @@ const invalidatePriorResetTokens = async (
   const adapter = (
     context as { context?: { adapter?: AdapterDeleteMany } } | undefined
   )?.context?.adapter;
-  const userId = (verification as { value?: unknown } | undefined)?.value;
-  if (!adapter || typeof userId !== "string" || userId.length === 0) {
+  const value = (verification as { value?: unknown } | undefined)?.value;
+  if (!adapter || typeof value !== "string" || value.length === 0) {
+    return;
+  }
+  // A two-factor / recovery enrolment marker creation (namespaced value) must not
+  // trigger a purge; only a reset-scope creation does.
+  if (!isResetScopeValue(value)) {
     return;
   }
   await adapter.deleteMany({
     model: "verification",
-    where: [{ field: "value", value: userId }],
+    where: [{ field: "value", value }],
   });
 };
 
@@ -564,7 +587,10 @@ export const buildAuthOptions = (
       ac,
       roles,
       defaultRole: "member",
-      adminRoles: ["admin", "superadmin"],
+      // Matrix-derived admin role set (the tiers holding `user:list`) — NOT a
+      // hand-typed literal — so the auth library never sanctions an admin role the
+      // one matrix does not, and the fail-closed checkpoint reads the same set.
+      adminRoles: ADMIN_TIER_ROLES,
     }),
     tanstackStartCookies(),
   ],

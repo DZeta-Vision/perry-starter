@@ -155,7 +155,9 @@
       "version": "0.0.0",
       "dependencies": {
         "@perry-starter/ai": "workspace:*",
+        "@perry-starter/api": "workspace:*",
         "@perry-starter/auth": "workspace:*",
+        "@perry-starter/data": "workspace:*",
         "@perry-starter/env": "workspace:*",
       },
       "devDependencies": {
@@ -178,6 +180,7 @@
       "name": "@perry-starter/api",
       "dependencies": {
         "@perry-starter/auth": "workspace:*",
+        "@perry-starter/db": "workspace:*",
         "@perry-starter/env": "workspace:*",
         "@trpc/client": "catalog:",
         "@trpc/server": "catalog:",

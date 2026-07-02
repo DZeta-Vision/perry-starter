@@ -45,6 +45,11 @@ type AuthStringKey =
   | "auth.language.toggle"
   | "auth.verify.resend"
   | "auth.locked.action"
+  | "auth.twoFactor.codeLabel"
+  | "auth.stepUp.title"
+  | "auth.stepUp.codeLabel"
+  | "auth.stepUp.confirm"
+  | "auth.stepUp.cancel"
   | "auth.forward.backToSignIn";
 
 const EN: Record<AuthStringKey, string> = {
@@ -89,6 +94,11 @@ const EN: Record<AuthStringKey, string> = {
   "auth.language.toggle": "Language",
   "auth.verify.resend": "Resend the link",
   "auth.locked.action": "Continue",
+  "auth.twoFactor.codeLabel": "Authentication code",
+  "auth.stepUp.title": "Confirm it's you",
+  "auth.stepUp.codeLabel": "Re-enter your credential",
+  "auth.stepUp.confirm": "Confirm and continue",
+  "auth.stepUp.cancel": "Cancel this action",
   "auth.forward.backToSignIn": "Back to sign in",
 };
 
@@ -137,6 +147,11 @@ const FR: Record<AuthStringKey, string> = {
   "auth.language.toggle": "Langue",
   "auth.verify.resend": "Renvoyer le lien",
   "auth.locked.action": "Continuer",
+  "auth.twoFactor.codeLabel": "Code d'authentification",
+  "auth.stepUp.title": "Confirmez votre identité",
+  "auth.stepUp.codeLabel": "Saisissez à nouveau votre justificatif",
+  "auth.stepUp.confirm": "Confirmer et continuer",
+  "auth.stepUp.cancel": "Annuler cette action",
   "auth.forward.backToSignIn": "Retour à la connexion",
 };
 

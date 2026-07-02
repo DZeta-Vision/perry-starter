@@ -45,8 +45,30 @@ DEFINE FIELD pass ON user TYPE string;
 -- and defaulting to the lowest tier. This is the claim the row-level PERMISSIONS
 -- read as $auth.role — distinct from any org-structural role.
 DEFINE FIELD role ON user TYPE string DEFAULT 'member';
+-- The single-sourced reversible-deactivate state (active|deactivated). A
+-- deactivate is a SOFT flip of this field, never a row DELETE, so a deactivated
+-- account is fully recoverable by flipping it back to 'active'. Defaults to
+-- 'active' so a freshly registered account is enabled.
+DEFINE FIELD status ON user TYPE string DEFAULT 'active';
+-- The keyset sort key: server-stamped, immutable, monotonic-per-insert creation
+-- time. The admin user list keysets on this (newest-first) rather than deep-paging
+-- with OFFSET/START.
+DEFINE FIELD created_at ON user TYPE datetime DEFAULT time::now() READONLY;
+-- Last-active and inviter are optional list filters; unset until the host stamps
+-- them (an as-yet-inactive or self-registered account carries neither).
+DEFINE FIELD last_active ON user TYPE option<datetime>;
+DEFINE FIELD invited_by ON user TYPE option<string>;
 
 DEFINE INDEX user_email ON user FIELDS email UNIQUE;
+
+-- Keyset read indexes. The admin user list pulls `WHERE [status = $s AND]
+-- created_at < $cursor ORDER BY created_at DESC LIMIT $n` — an index-backed range
+-- walk, never an OFFSET/START deep-page and never a TableScan. The single-field
+-- index backs the unfiltered keyset; the trailing composite backs the
+-- status-scoped keyset (the equality-lead + range shape the query planner covers
+-- with an IndexScan).
+DEFINE INDEX idx_user_created ON user FIELDS created_at;
+DEFINE INDEX idx_user_status_created ON user FIELDS status, created_at;
 
 -- The documents entity. Owned by the authenticated record; only the owner may
 -- read or write their own rows. No table or field is left defaulting open.
@@ -121,23 +143,124 @@ DEFINE INDEX idx_document_projection_scope_doc ON document_projection FIELDS sco
 -- index never mixes embedding spaces (the read filters embedding_model too).
 DEFINE INDEX idx_document_projection_embedding ON document_projection FIELDS embedding HNSW DIMENSION 8 DIST COSINE TYPE F32;
 
--- The audit trail is APPEND-ONLY. Entries may be created, and read only by the
--- admin/superadmin tier (the escalation is keyed on the GLOBAL role claim
--- $auth.role split on ',', never an org-structural role). NO role — not even
--- superadmin — may update or delete an entry: FOR update, delete NONE holds for
--- everyone, so the trail can never be rewritten. The escalation predicate here is
--- the one the row-PERMISSIONS generator emits from the single-sourced matrix.
+-- The audit trail is APPEND-ONLY and SYSTEM-WRITTEN, carrying the full canonical
+-- entry field set. Immutability and least-privilege are enforced at the row layer:
+--
+--   * FOR update, delete NONE holds for EVERY role including superadmin, so no
+--     authenticated session — not even the highest tier — can rewrite, redact, or
+--     clear an entry. The trail can only grow.
+--   * FOR create is GATED to the admin/superadmin escalation, NOT left open (FULL).
+--     Writes are system-level: the privileged forwarder that runs after the tRPC
+--     authorization layer holds the write context (a root/system credential
+--     bypasses row PERMISSIONS), and a below-admin scoped session can NEVER inject
+--     a row. An arbitrary authenticated member session appending a forged event is
+--     denied here — closing the audit-write fail-open at the data layer.
+--   * FOR select is permitted only to the admin/superadmin tier, keyed on the
+--     GLOBAL role claim $auth.role split on ',' (never an org-structural role), so
+--     a non-admin session reads zero rows even if the tRPC layer were bypassed.
+--
+-- The COMMENT carries the machine-readable retention contract (retention_days) the
+-- immutability conformance gate reads; a value under the 90-day floor reddens it.
 DEFINE TABLE audit_log SCHEMAFULL
+  COMMENT 'append-only system-written audit trail. retention_days=90'
   PERMISSIONS
-    FOR create FULL
+    FOR create WHERE string::split($auth.role, ',') CONTAINS 'admin' OR string::split($auth.role, ',') CONTAINS 'superadmin'
     FOR select WHERE string::split($auth.role, ',') CONTAINS 'admin' OR string::split($auth.role, ',') CONTAINS 'superadmin'
     FOR update, delete NONE;
 
-DEFINE FIELD action ON audit_log TYPE string;
--- actor_id is the AUTHENTICATED writer, never client-supplied: VALUE recomputes
--- it from the session's $auth on every write, so a forged actor_id in the create
--- payload is overwritten by type::string($auth) (the record-access user's id).
--- This closes the write-authenticity hole that a plain DEFAULT '' left open while
--- keeping the trail append-only (FOR update, delete NONE above).
-DEFINE FIELD actor_id ON audit_log TYPE string VALUE type::string($auth);
-DEFINE FIELD created_at ON audit_log TYPE datetime DEFAULT time::now() READONLY;
+-- The action is constrained to the closed `<domain>.<verb>` vocabulary at the data
+-- layer too (the Zod auditEntrySchema enforces the same at the write boundary): the
+-- domain must be one of the closed set and a verb must follow the dot. A write with
+-- an out-of-vocabulary action (e.g. 'billing.charge') is rejected by this ASSERT.
+DEFINE FIELD action ON audit_log TYPE string
+  ASSERT array::len(string::split($value, '.')) >= 2
+    AND string::split($value, '.')[0] INSIDE ['auth', 'admin', 'session', 'lockout', 'user'];
+-- The actor and the rest of the entry are supplied by the trusted system writer and
+-- validated against the canonical shape at the write gate before they reach here;
+-- the record id is a server-minted ULID (the idempotency key). Free-text fields
+-- (actor_email / user_agent / ip) can carry arbitrary bytes and travel as bound
+-- query variables on the write path, never spliced into the statement body.
+DEFINE FIELD actor ON audit_log TYPE string;
+DEFINE FIELD actor_email ON audit_log TYPE string;
+DEFINE FIELD actor_role ON audit_log TYPE string;
+DEFINE FIELD target_type ON audit_log TYPE string;
+DEFINE FIELD target_id ON audit_log TYPE string;
+DEFINE FIELD metadata ON audit_log TYPE object FLEXIBLE DEFAULT {};
+DEFINE FIELD ip ON audit_log TYPE string;
+DEFINE FIELD user_agent ON audit_log TYPE string;
+-- Server-generated, immutable ISO-8601 timestamp (READONLY: never client-supplied,
+-- never updatable). SurrealDB serializes the datetime to an ISO-8601 string on read.
+DEFINE FIELD timestamp ON audit_log TYPE datetime DEFAULT time::now() READONLY;
+
+-- Keyset read index: entries are read newest-first by the time-sortable ULID record
+-- id (WHERE id > $cursor ORDER BY id LIMIT $n), never an OFFSET/START deep page. The
+-- timestamp index backs range-scoped retention queries.
+DEFINE INDEX idx_audit_log_timestamp ON audit_log FIELDS timestamp;
+
+-- Break-glass recovery codes. The table is SEALED (PERMISSIONS NONE): no
+-- record-access session — not even the code's owner — may read or mutate a row
+-- directly. Generation and single-use consumption run in the privileged
+-- system/superadmin-gated forwarder that bypasses row PERMISSIONS (mirroring the
+-- audit-write path), so a scoped session can never read a hash, forge a code, or
+-- flip `used_at`. Codes are stored ONLY as PBKDF2 hashes (never plaintext); a
+-- consume marks `used_at` once, so a replayed/spent code can never be re-used.
+DEFINE TABLE recovery_code SCHEMAFULL PERMISSIONS NONE;
+
+-- The code hash (never the plaintext code). The spend timestamp is null until the
+-- code is consumed single-use; the owning user reference scopes a user's set.
+DEFINE FIELD hashed_code ON recovery_code TYPE string;
+DEFINE FIELD used_at ON recovery_code TYPE option<datetime>;
+DEFINE FIELD user_ref ON recovery_code TYPE record<user>;
+
+-- Range-back the per-user recovery-code read (the consume scans a user's unused
+-- codes); never a full-table scan.
+DEFINE INDEX idx_recovery_code_user ON recovery_code FIELDS user_ref;
+
+-- The pending-invitation table — the ONE canonical invitation model. It is SEALED
+-- (PERMISSIONS NONE): no record-access session reads or mutates a row directly.
+-- Mint, resend, revoke, auto-expire, and accept all run in the privileged
+-- system/admin-gated forwarder that bypasses row PERMISSIONS (mirroring the
+-- audit-write and recovery-code paths), so a scoped session can never enumerate an
+-- invitation, read a token digest, or forge/flip a status. Critically, this table
+-- holds NO user account: the account is provisioned only on acceptance, so no
+-- half-formed privileged account ever exists before acceptance.
+--
+-- The token is stored ONLY as a digest (token_hash) — never the plaintext token —
+-- and is single-use: acceptance marks accepted_at once, so a replayed/spent token
+-- can never be re-used. An org-membership invitation reuses THIS table by setting
+-- organization_id and an org-structural role.
+DEFINE TABLE invitation SCHEMAFULL PERMISSIONS NONE;
+
+-- The invited email — the acceptance-time account address, never revealed by any
+-- surface (the invitation is looked up by token digest, never by email).
+DEFINE FIELD email ON invitation TYPE string;
+-- Optional org scope so a future org-membership invitation reuses this same table.
+DEFINE FIELD organization_id ON invitation TYPE option<string>;
+-- The GLOBAL app-authz role to STAMP on acceptance (never stamped at invite time).
+-- Confined to the closed vocabulary at the data layer too.
+DEFINE FIELD role ON invitation TYPE string
+  ASSERT $value INSIDE ['member', 'admin', 'superadmin'];
+-- The single-use token digest (never the plaintext token). The UNIQUE index makes
+-- it the indexable acceptance-lookup key.
+DEFINE FIELD token_hash ON invitation TYPE string;
+-- The inviting admin/superadmin.
+DEFINE FIELD invited_by ON invitation TYPE string;
+-- The lifecycle status, defaulting to pending and constrained to the closed set. A
+-- write with an out-of-vocabulary status is rejected by this ASSERT.
+DEFINE FIELD status ON invitation TYPE string DEFAULT 'pending'
+  ASSERT $value INSIDE ['pending', 'accepted', 'expired', 'revoked'];
+-- Server-stamped, immutable creation time.
+DEFINE FIELD created_at ON invitation TYPE datetime DEFAULT time::now() READONLY;
+-- The expiry window: an invitation past this instant auto-expires and can never be
+-- accepted.
+DEFINE FIELD expires_at ON invitation TYPE datetime;
+-- The single-use spend marker: null until the invitation is accepted, so a replayed
+-- token resolves to consumed.
+DEFINE FIELD accepted_at ON invitation TYPE option<datetime>;
+
+-- The single-use acceptance lookup: a duplicate token digest can never create a
+-- second invitation, and acceptance matches by this UNIQUE digest.
+DEFINE INDEX idx_invitation_token ON invitation FIELDS token_hash UNIQUE;
+-- Range-back the auto-expiry / cleanup sweep (WHERE status = 'pending' AND
+-- expires_at < $now) — an index-backed range walk, never a full table scan.
+DEFINE INDEX idx_invitation_status_expires ON invitation FIELDS status, expires_at;

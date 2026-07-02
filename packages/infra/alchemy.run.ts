@@ -16,6 +16,12 @@ export const gatekeeper = await Worker("gatekeeper", {
   cwd: "../../apps/worker",
   entrypoint: "./src/worker.ts",
   compatibility: "node",
+  // The observe-first cleanup sweep runs on THIS Worker (the sole cloud-SurrealDB
+  // holder) on a daily cron. The cron only fires the scheduled() handler; the
+  // observe/sweep toggle (CLEANUP_MODE, default observe) and the window
+  // (CLEANUP_WINDOW_HOURS, default 48h) govern what it actually does — so a fresh
+  // deployment observes before it ever removes anything.
+  crons: ["0 3 * * *"],
   bindings: {
     PERRY_TARGET: alchemy.env.PERRY_TARGET,
     CORS_ORIGIN: alchemy.env.CORS_ORIGIN,
@@ -26,6 +32,15 @@ export const gatekeeper = await Worker("gatekeeper", {
     SURREAL_DB: alchemy.env.SURREAL_DB,
     SURREAL_USER: alchemy.secret.env.SURREAL_USER,
     SURREAL_PASS: alchemy.secret.env.SURREAL_PASS,
+    // Observe-first cleanup config (operator-tunable per stage). Read from
+    // process.env with an observe-first fallback: an unset knob deploys the
+    // fail-safe dry-run posture (observe / 48h); a stage opts into destruction by
+    // setting CLEANUP_MODE=sweep explicitly. (NB: the two-arg `alchemy.env(name,
+    // value)` form returns `value` unconditionally without reading the env, so it
+    // must NOT be used for a defaulted-but-overridable knob — read process.env
+    // directly here.)
+    CLEANUP_MODE: process.env.CLEANUP_MODE ?? "observe",
+    CLEANUP_WINDOW_HOURS: process.env.CLEANUP_WINDOW_HOURS ?? "48",
   },
 });
 

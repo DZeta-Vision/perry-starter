@@ -3,6 +3,7 @@ import { documentsEntitySchema } from "../documents";
 import { auditEntrySchema } from "../shapes/audit-entry";
 import { deltaEnvelopeSchema } from "../shapes/delta-envelope";
 import { documentProjectionSchema } from "../shapes/document-projection";
+import { recoveryCodeSchema } from "../shapes/recovery-code";
 
 const SNAKE_CASE_KEY = /^[a-z][a-z0-9_]*$/;
 
@@ -14,6 +15,7 @@ const keyedShapes = [
   documentProjectionSchema,
   auditEntrySchema,
   documentsEntitySchema,
+  recoveryCodeSchema,
 ];
 
 describe("canonical shape naming conventions", () => {

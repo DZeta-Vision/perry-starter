@@ -25,6 +25,8 @@ const SEALED_TABLES = new Set([
   "user",
   "document_delta",
   "document_projection",
+  "recovery_code",
+  "invitation",
 ]);
 // The append-only audit table (added at green phase).
 const AUDIT_TABLE = "audit_log";

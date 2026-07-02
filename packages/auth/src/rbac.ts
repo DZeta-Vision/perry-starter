@@ -97,6 +97,31 @@ export const roleParity = (
   return { parity: drifts.length === 0, drifts };
 };
 
+// The admin-surface capability — the ONE matrix's `user:list` (admin tier). It is
+// held by admin/superadmin and NOT by member, so it is the single-sourced hinge
+// the fail-closed admin checkpoint AND the auth library's admin role map both
+// derive from. Deriving both from THIS forbids a divergent admin role.
+export const ADMIN_SURFACE_CAPABILITY = { user: ["list"] } as const;
+
+// The tiers that clear the admin-surface checkpoint: exactly those the ONE matrix
+// grants `user:list`. Fed to the admin() plugin's `adminRoles` so the auth library
+// never introduces an admin role the matrix does not sanction, and read by the
+// checkpoint so its role decision is the SAME matrix decision.
+export const adminTierRoles = (): Tier[] =>
+  TIERS.filter(
+    (tier) => ROLES[tier].authorize(ADMIN_SURFACE_CAPABILITY, "AND").success
+  );
+
+// Whether a GLOBAL role claim (comma-split) resolves to any admin-surface tier —
+// the checkpoint's role decision, keyed on the GLOBAL claim, never an org role.
+export const holdsAdminSurface = (roleClaim: string): boolean =>
+  resolveGlobalRoles({ user: { role: roleClaim } }).some((tier) => {
+    const role = ROLES[tier as Tier];
+    return role
+      ? role.authorize(ADMIN_SURFACE_CAPABILITY, "AND").success
+      : false;
+  });
+
 // Whether a tier holds the superadmin-only `user:set-role` capability.
 const holdsSetRole = (tier: Tier): boolean =>
   (ROLES[tier].statements.user ?? []).includes("set-role");
@@ -105,3 +130,17 @@ const holdsSetRole = (tier: Tier): boolean =>
 // self-elevation: a requester can never grant a tier at or above its own.
 export const canAssignRole = (requester: Tier, target: Tier): boolean =>
   holdsSetRole(requester) && APP_ROLE_RANK[target] < APP_ROLE_RANK[requester];
+
+// The tiers the ONE matrix grants the superadmin-only `user:set-role` capability
+// (superadmin only). Derived from the matrix, never a hand-typed 'superadmin'
+// literal — the tRPC role-change gate reads this set so it can never sanction a
+// role-assigner the matrix does not, and the row leg below projects the SAME set.
+export const roleAssignmentTiers = (): Tier[] => TIERS.filter(holdsSetRole);
+
+// The SurrealDB row-level PERMISSIONS escalation predicate for role assignment:
+// keyed on the GLOBAL role claim ($auth.role split on ','), it admits ONLY a tier
+// holding `user:set-role` (superadmin). This is the second (DB) leg of the
+// two-layer superadmin-only role-assignment authority — generated from the SAME
+// matrix as the tRPC leg, so the role-parity gate proves they cannot drift.
+export const roleAssignmentEscalationPredicate = (): string =>
+  escalationPredicateFor(roleAssignmentTiers());

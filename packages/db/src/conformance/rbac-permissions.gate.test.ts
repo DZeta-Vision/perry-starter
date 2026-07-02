@@ -19,6 +19,8 @@ const SEALED_TABLES = new Set([
   "user",
   "document_delta",
   "document_projection",
+  "recovery_code",
+  "invitation",
 ]);
 const AUDIT_TABLE = "audit_log";
 
