@@ -155,7 +155,9 @@
       "version": "0.0.0",
       "dependencies": {
         "@perry-starter/ai": "workspace:*",
+        "@perry-starter/api": "workspace:*",
         "@perry-starter/auth": "workspace:*",
+        "@perry-starter/data": "workspace:*",
         "@perry-starter/env": "workspace:*",
       },
       "devDependencies": {
