@@ -306,6 +306,23 @@ const main = () => {
   const argv = process.argv.slice(2);
   const root = resolve(valueAfter(argv, "--root") ?? process.cwd());
 
+  // Destructive-tree fence: this tool DELETES and rewrites files in place at
+  // `root`. When `root` is a real git working tree (a `.git` entry exists),
+  // refuse unless `--confirm` is passed — so an accidental direct
+  // `node scripts/remove-reference.mjs` (e.g. mistaking it for its gate test)
+  // can never nuke the live repo. The documented path (`bun run
+  // remove-reference`) passes `--confirm`; the gate/twin tests exercise it on a
+  // temp copy that has no `.git`, so they are unaffected.
+  if (existsSync(join(root, ".git")) && !argv.includes("--confirm")) {
+    process.stderr.write(
+      "remove-reference: refusing to mutate the live git working tree without --confirm.\n" +
+        "This deletes/rewrites files in place. Run its .gate.test.ts to exercise it\n" +
+        "safely (temp copy), or run `bun run remove-reference` to do it on purpose.\n"
+    );
+    process.exit(1);
+    return;
+  }
+
   for (const { file, edits } of REPOINTS) {
     editFile(root, file, edits);
   }

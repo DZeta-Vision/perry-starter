@@ -192,8 +192,9 @@ jobs:
   #
   # Deferred scanner/build-gate family (TODO, will become BLOCKING):
   #   - manifest-diff gate        (perry --print-api-manifest vs baseline)
-  #   - tier-boundary build guard (daemon closure denylist incl. transitive
-  #       @electric-sql/pglite + WASM + non-literal dynamic import)
+  #   - tier-boundary build guard: the structural denylist leg is now BLOCKING
+  #       (conformance-gates job below); the transitive resolved-closure +
+  #       non-literal dynamic-import + compile-and-run legs remain deferred
   #   - read-path AST guard       (no full-list client render/sort; no OFFSET)
   #   - mis-tier structural guard (no concrete *.cloud.ts/*.local.ts import
   #       into app/UI/auth; admin never reads via an auth-only tier)
@@ -227,11 +228,10 @@ jobs:
       - name: Conformance suite (node project)
         run: bunx vitest run --project node
 
-      # STRUCTURE (non-blocking): tier-boundary guard self-check over the repo
-      # graph — flags a concrete-impl import into the UI and a denylisted
-      # cloud/WASM dependency reaching the daemon/seam graph. Blocking
-      # enforcement, the full resolved-dependency-closure scan, and the
-      # compile-and-run leg are deferred to later hardening; do not gate on it.
-      - name: Tier-boundary guard (structure)
+      # BLOCKING — tier-boundary guard over the repo graph: fails the build on a
+      # concrete-impl import into the UI, or a denylisted cloud/WASM dependency
+      # (incl. @tanstack/ai + @ag-ui/core) reaching the daemon/seam graph. The
+      # full resolved-dependency-closure scan and the compile-and-run leg remain
+      # deferred hardening, but the structural denylist is now a merge blocker.
+      - name: Tier-boundary guard
         run: node scripts/tier-boundary-guard.mjs --root .
-        continue-on-error: true

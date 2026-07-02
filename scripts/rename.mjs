@@ -179,6 +179,22 @@ const main = () => {
     return;
   }
 
+  // Destructive-tree fence: this tool rewrites file contents and renames files
+  // in place at `root`. When `root` is a real git working tree (a `.git` entry
+  // exists), refuse unless `--confirm` is passed — so an accidental direct
+  // `node scripts/rename.mjs` can never rewrite the live repo. The documented
+  // path (`bun run rename <domain>`) passes `--confirm`; the gate/twin tests run
+  // it on a temp copy that has no `.git`, so they are unaffected.
+  if (existsSync(join(root, ".git")) && !argv.includes("--confirm")) {
+    process.stderr.write(
+      "perry rename: refusing to rewrite the live git working tree without --confirm.\n" +
+        "This rewrites/renames files in place. Run its .gate.test.ts to exercise it\n" +
+        "safely (temp copy), or run `bun run rename <domain>` to do it on purpose.\n"
+    );
+    process.exit(1);
+    return;
+  }
+
   const files = collectFiles(root);
 
   // Pass 1: rewrite file contents in place (paths unchanged).

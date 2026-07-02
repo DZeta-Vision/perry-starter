@@ -26,11 +26,11 @@ pre-commit:
 pre-push:
   parallel: false
   jobs:
-    # Types must resolve before a push (tsc via Turbo).
-    - name: check-types
-      run: bun run check-types
-    # Vitest run (web + node projects). Coverage thresholds are intentionally
-    # NOT enforced yet (no tests) — CI carries the TODO to enforce them once
-    # packages/* tests land.
-    - name: test
-      run: bun run test
+    # Verify the COMMITTED HEAD before it leaves the machine: refuse on a dirty
+    # tree, then run type check + the full Vitest suite + the structural gates
+    # (meta-gate, tier-boundary, reference guard). This is the one command that
+    # reproduces "the full suite on the committed HEAD" so it can't be a
+    # forgotten habit. Bypassable with `git push --no-verify` (CI is the
+    # non-bypassable backstop); ALLOW_DIRTY=1 runs it against the working copy.
+    - name: verify-head
+      run: bun run verify:head
