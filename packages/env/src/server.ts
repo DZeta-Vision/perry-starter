@@ -48,6 +48,11 @@ const serverEnvShape = {
   GITHUB_CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  // The Cloudflare Turnstile SECRET for SERVER-SIDE siteverify (the CAPTCHA tier
+  // of the progressive lockout). Cloud-authority-only: bound on the gatekeeper
+  // Worker via alchemy.secret(); the relay tier holds none, so it is optional on
+  // the contract and a relay boot still validates.
+  TURNSTILE_SECRET: z.string().min(1).optional(),
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),

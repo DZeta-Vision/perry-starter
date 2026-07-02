@@ -17,8 +17,20 @@ import {
 import { initTRPC, TRPCError } from "@trpc/server";
 
 import type { Context } from "./context";
+import { lockoutDataForError } from "./lockout-envelope";
 
-export const t = initTRPC.context<Context>().create();
+// The shipped root tRPC instance. Its errorFormatter folds the progressive-lockout
+// projection into shape.data (ACCOUNT_LOCKED + retryAfter) for a genuine lockout
+// cause, and nothing for any other error — so a real procedure that throws
+// `buildLockoutError` surfaces the account-locked envelope the client already
+// consumes, exactly like the sibling admin/step-up codes ride shape.data.code. There
+// is no separate per-leg tRPC instance for lockout: this is the one shipped path.
+export const t = initTRPC.context<Context>().create({
+  errorFormatter: ({ shape, error }) => ({
+    ...shape,
+    data: { ...shape.data, ...lockoutDataForError(error) },
+  }),
+});
 
 export const router = t.router;
 

@@ -1,11 +1,27 @@
 import alchemy from "alchemy";
-import { TanStackStart, Worker } from "alchemy/cloudflare";
+import {
+  DurableObjectNamespace,
+  TanStackStart,
+  Worker,
+} from "alchemy/cloudflare";
 import { config } from "dotenv";
 
 config({ path: "./.env" });
 config({ path: "../../apps/web/.env" });
 
 const app = await alchemy("perry-starter");
+
+// The strongly-consistent progressive-lockout counter namespace. A Durable Object
+// (SQLite-backed) — NEVER Cloudflare KV (eventually consistent): every per-key RPC
+// serializes on ONE instance so failed-attempt counts can't lose an update, and
+// the per-account (`account:<subject>`) and per-IP (`ip:<subject>`) perimeters get
+// physically distinct instances. The `id` "lockout" is the IMMUTABLE migration
+// key; `className` must match the `LockoutCounter` class re-exported from the
+// worker entrypoint. Synchronous factory — no await/new.
+const lockout = DurableObjectNamespace("lockout", {
+  className: "LockoutCounter",
+  sqlite: true,
+});
 
 // The cloud gatekeeper: the auth-authority / cloud data ingress. better-auth is
 // the SOLE session/token issuer, and this is the ONLY server unit that reaches
@@ -32,6 +48,12 @@ export const gatekeeper = await Worker("gatekeeper", {
     SURREAL_DB: alchemy.env.SURREAL_DB,
     SURREAL_USER: alchemy.secret.env.SURREAL_USER,
     SURREAL_PASS: alchemy.secret.env.SURREAL_PASS,
+    // The progressive-lockout DO counters + the Turnstile server-side siteverify
+    // secret. The DO namespace is the authoritative throttle (strongly consistent,
+    // never KV); the Turnstile secret is per-widget and reaches the handler as
+    // env.TURNSTILE_SECRET (alchemy.secret -> secret_text, never wrangler secret put).
+    LOCKOUT: lockout,
+    TURNSTILE_SECRET: alchemy.secret.env.TURNSTILE_SECRET,
     // Observe-first cleanup config (operator-tunable per stage). Read from
     // process.env with an observe-first fallback: an unset knob deploys the
     // fail-safe dry-run posture (observe / 48h); a stage opts into destruction by
