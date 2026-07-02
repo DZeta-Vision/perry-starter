@@ -1,16 +1,19 @@
 import { withSecurityHeaders } from "@perry-starter/api/security-headers";
+import { isAdminTrpcPath } from "@perry-starter/api/serve-admin";
 import { auth } from "@perry-starter/auth";
 import { normalizeAuthResponse } from "@perry-starter/auth/anti-enumeration";
 import { isAuthSuccess } from "@perry-starter/auth/login-outcome";
+import { type AdminTrpcEnv, handleAdminTrpc } from "./admin-trpc";
 import { AI_FLOOR_PATH, type AiFloorEnv, handleAiFloor } from "./ai-floor";
 import {
   assessLoginLockout,
   bindWorkerLockoutRecorder,
   type LockoutEnv,
-  recordFailedLogin,
+  recordFailedLoginWithAlert,
   resetSubjectLockout,
   shouldRecordLoginFailure,
 } from "./lockout";
+import { bindWorkerAuthAudit } from "./observability";
 import { type CleanupEnv, handleScheduledCleanup } from "./scheduled-cleanup";
 
 // The strongly-consistent Durable-Object lockout counter class — re-exported here
@@ -22,7 +25,7 @@ export { LockoutCounter } from "./lockout";
 // The gatekeeper Worker env: the AI-floor bindings, the runtime SurrealDB forwarder
 // credential + the cleanup config knobs, and the progressive-lockout bindings (the
 // DO counter namespace + the Turnstile server-side secret).
-type GatekeeperEnv = AiFloorEnv & CleanupEnv & LockoutEnv;
+type GatekeeperEnv = AdminTrpcEnv & AiFloorEnv & CleanupEnv & LockoutEnv;
 
 // better-auth mounts the email/password sign-in at this path; it is the ingress
 // where the progressive-lockout gate runs (before delegating) and where a failed
@@ -99,8 +102,10 @@ const handleAuthIngress = async (
     resetSubjectLockout(env, { email, remoteip });
   } else if (shouldRecordLoginFailure(response.status)) {
     // ONLY a genuine credential miss (401) increments the DO counters (the
-    // authoritative throttle); a verification-required 403 is NOT a strike.
-    recordFailedLogin({ email, remoteip });
+    // authoritative throttle); a verification-required 403 is NOT a strike. The
+    // increment is awaited so the post-increment count can fire the admin alert
+    // exactly once when the subject crosses the escalation boundary.
+    await recordFailedLoginWithAlert(env, { email, remoteip });
   }
   return await normalizeAuthResponse(request, response);
 };
@@ -112,11 +117,20 @@ const routeRequest = async (
   // Bind the DO-backed lockout recorder once (idempotent) so failed logins /
   // step-ups increment the strongly-consistent counter; also logs the tunables.
   bindWorkerLockoutRecorder(env);
-  // The cloud AI floor is served same-origin on the gatekeeper Worker; every
+  // Bind the auth-authority audit sink once (idempotent) to a structured,
+  // secret-scrubbed console emit — so an operator sees auth events (hibp fallback,
+  // verification-email dispatch) as structured JSON instead of the silent no-op.
+  bindWorkerAuthAudit();
+  // The cloud AI floor is served same-origin on the gatekeeper Worker; the mounted
+  // admin/compliance tRPC surface is served here too (this Worker is the sole holder
+  // of the runtime SurrealDB binding, so the privileged forwarder is real); every
   // other path is the better-auth ingress (with the sign-in lockout gate).
   const url = new URL(request.url);
   if (url.pathname === AI_FLOOR_PATH) {
     return await handleAiFloor(request, env);
+  }
+  if (isAdminTrpcPath(url.pathname)) {
+    return await handleAdminTrpc(request, env);
   }
   return await handleAuthIngress(request, env);
 };

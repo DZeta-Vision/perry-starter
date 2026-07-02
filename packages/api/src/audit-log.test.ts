@@ -51,7 +51,7 @@ describe("the tRPC read leg denies below-admin and never leaks rows", () => {
     const readAuditEntries = vi.fn(() => Promise.resolve([]));
     const caller = createAuditReadCaller({
       readAuditEntries,
-      session: { user: { id: "user:m", role: "member" } },
+      session: { id: "sess-m", user: { id: "user:m", role: "member" } },
     });
     const captured = await caller
       .list({ limit: 50 })
@@ -82,7 +82,7 @@ describe("the tRPC read leg denies below-admin and never leaks rows", () => {
       );
       const caller = createAuditReadCaller({
         readAuditEntries,
-        session: { user: { id: "user:a", role } },
+        session: { id: "sess-a", user: { id: "user:a", role } },
       });
       const page = await caller.list({ limit: 50 });
       expect(page.entries).toHaveLength(1);

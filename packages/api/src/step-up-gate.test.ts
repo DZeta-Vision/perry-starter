@@ -36,9 +36,13 @@ const makeCtx = (over: CtxOver = {}) => {
   const store = over.store ?? createStepUpGrantStore();
   const ctx: StepUpContext = {
     now: over.now ?? T0,
-    recordConsequentAudit: (event) => consequent.push(event),
+    recordConsequentAudit: (event) => {
+      consequent.push(event);
+    },
     recordLockoutFailure: lockout,
-    recordStepUpAudit: (event) => audits.push(event),
+    recordStepUpAudit: (event) => {
+      audits.push(event);
+    },
     revokeSession,
     session:
       "session" in over

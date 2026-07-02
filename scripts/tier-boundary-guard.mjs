@@ -41,6 +41,17 @@ const DAEMON_DENYLIST = [
   "loro-crdt",
   "@tanstack/ai",
   "@ag-ui/core",
+  // Observability SDKs foreclosed in the native binary (the daemon's Sentry path
+  // is a hand-rolled HTTP-envelope reporter over native fetch; pino is replaced by
+  // structured JSON via stderr). Enforces the "no in-process SDK/WASM/prebuilt-JS
+  // in the daemon" law for the exact specifiers observability would reach for.
+  "@sentry/node",
+  "@sentry/core",
+  "@sentry/cloudflare",
+  "@sentry/profiling-node",
+  "pino",
+  "pino-http",
+  "pino-pretty",
 ];
 
 // Directories never worth descending into. `__fixtures__`, `test`, and

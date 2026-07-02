@@ -17,18 +17,28 @@ import {
 import { initTRPC, TRPCError } from "@trpc/server";
 
 import type { Context } from "./context";
+import { requireSink } from "./fail-closed";
 import { lockoutDataForError } from "./lockout-envelope";
 
-// The shipped root tRPC instance. Its errorFormatter folds the progressive-lockout
-// projection into shape.data (ACCOUNT_LOCKED + retryAfter) for a genuine lockout
-// cause, and nothing for any other error — so a real procedure that throws
-// `buildLockoutError` surfaces the account-locked envelope the client already
-// consumes, exactly like the sibling admin/step-up codes ride shape.data.code. There
-// is no separate per-leg tRPC instance for lockout: this is the one shipped path.
+// The shipped root tRPC instance — the ONE served surface (the mounted admin /
+// audit / step-up / invitation sub-routers all build on it). Its errorFormatter
+// folds two projections into shape.data:
+//   - the precise error code from the cause (STEP_UP_REQUIRED / ROLE_ASSIGNMENT_*
+//     / ADMIN_BACKEND_UNAVAILABLE / … are NOT native tRPC codes, so the nearest
+//     native code is thrown and the precise code rides shape.data.code), and
+//   - the progressive-lockout projection (ACCOUNT_LOCKED + retryAfter) for a
+//     genuine lockout cause — so `buildLockoutError` surfaces the account-locked
+//     envelope the client already consumes. lockoutDataForError is folded LAST so a
+//     real lockout keeps ACCOUNT_LOCKED + retryAfter; every other error carries its
+//     precise cause code. There is no separate per-leg tRPC instance.
 export const t = initTRPC.context<Context>().create({
   errorFormatter: ({ shape, error }) => ({
     ...shape,
-    data: { ...shape.data, ...lockoutDataForError(error) },
+    data: {
+      ...shape.data,
+      code: adCodeForError(error) ?? shape.data.code,
+      ...lockoutDataForError(error),
+    },
   }),
 });
 
@@ -347,16 +357,18 @@ export interface StepUpAuditEvent {
 export interface StepUpContext {
   // Injected clock so the TTL boundary is driven deterministically.
   readonly now: number;
-  // The consequent-action audit the guarded resolver emits on success.
+  // The consequent-action audit the guarded resolver emits on success. Forwarder-
+  // backed on the served surface, so it is awaited; resolved fail-closed via
+  // `requireSink` before the resolver's effect.
   readonly recordConsequentAudit: (event: {
     readonly actor: string;
     readonly action: string;
-  }) => void;
+  }) => Promise<void> | void;
   // The SHARED per-subject lockout-recording seam (a failed step-up routes to the
   // same counter as a failed login). The DO-backed increment behind it is deferred.
   readonly recordLockoutFailure: (subject: string) => void;
   // Injected audit sink — every attempt records through it (audit outermost).
-  readonly recordStepUpAudit: (event: StepUpAuditEvent) => void;
+  readonly recordStepUpAudit: (event: StepUpAuditEvent) => Promise<void> | void;
   // The session-revoke seam the step-up path must NEVER call — cancel/fail-twice
   // abort ONLY the action, never the session. Present so a test can prove it stays
   // untouched.
@@ -374,13 +386,6 @@ export interface StepUpContext {
   readonly stepUpToken?: string;
 }
 
-const tStepUp = initTRPC.context<StepUpContext>().create({
-  errorFormatter: ({ shape, error }) => ({
-    ...shape,
-    data: { ...shape.data, code: adCodeForError(error) ?? shape.data.code },
-  }),
-});
-
 // Throw the nearest native code carrying STEP_UP_REQUIRED in shape.data.code.
 const stepUpRequired = (): never => {
   throw new TRPCError({
@@ -390,29 +395,47 @@ const stepUpRequired = (): never => {
   });
 };
 
-// The composable step-up gate, bound to its dangerous action. Layered on a session
-// check; runs BEFORE input parsing. On grant it narrows the session non-null for the
-// resolver.
+// The composable step-up gate, bound to its dangerous action. Built on the ONE
+// shared `t` so it mounts into the single served router. Layered on a session check
+// AND the admin-surface role gate (these live-mounted legs are classified `admin` in
+// the procedure-tier manifest, so a below-admin session is denied FORBIDDEN before
+// the step-up challenge — matching the tier map, no capability enumeration). Runs
+// BEFORE input parsing. On grant it narrows the session non-null for the resolver.
+// The step-up audit sink is resolved fail-closed (`requireSink`) up front, so a
+// dangerous mutation can never proceed — or be challenged — without its step-up audit
+// wired; the grant store is likewise required at use, so a tier with no store
+// CHALLENGES rather than silently granting.
 const stepUpGuardedProcedure = (action: DangerousAction) =>
-  tStepUp.procedure.use(({ ctx, next }) => {
+  t.procedure.use(async ({ ctx, next }) => {
     if (!ctx.session) {
       throw new TRPCError({
         code: "UNAUTHORIZED",
         message: "Authentication required",
       });
     }
+    if (!holdsAdminSurface(ctx.session.user.role)) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Insufficient role for this scope",
+      });
+    }
     const actor = ctx.session.user.id;
+    const recordStepUpAudit = requireSink(
+      ctx.recordStepUpAudit,
+      "recordStepUpAudit"
+    );
 
     // No token → the initial challenge (not a lockout failure). Audited, then
     // STEP_UP_REQUIRED raises the modal.
     if (ctx.stepUpToken === undefined) {
-      ctx.recordStepUpAudit({ action, actor, outcome: "challenged" });
+      await recordStepUpAudit({ action, actor, outcome: "challenged" });
       stepUpRequired();
     }
 
-    const result = ctx.stepUpStore.verifyAndConsume({
+    const store = requireSink(ctx.stepUpStore, "stepUpStore");
+    const result = store.verifyAndConsume({
       action,
-      now: ctx.now,
+      now: ctx.now ?? Date.now(),
       sessionId: ctx.session.id,
       token: ctx.stepUpToken,
     });
@@ -421,18 +444,18 @@ const stepUpGuardedProcedure = (action: DangerousAction) =>
       // A presented-but-invalid grant is a FAILURE: audit it and record through the
       // shared lockout seam. Whether it re-challenges or (fail-twice) aborts the
       // action, the SESSION is never touched.
-      ctx.recordStepUpAudit({ action, actor, outcome: "rejected" });
-      ctx.recordLockoutFailure(actor);
+      await recordStepUpAudit({ action, actor, outcome: "rejected" });
+      ctx.recordLockoutFailure?.(actor);
       stepUpRequired();
     }
 
-    ctx.recordStepUpAudit({ action, actor, outcome: "granted" });
+    await recordStepUpAudit({ action, actor, outcome: "granted" });
     return next({ ctx: { ...ctx, session: ctx.session } });
   });
 
 // A session-only (non-step-up) guard for a benign op — proving a non-dangerous
 // mutation needs no step-up grant.
-const stepUpSessionProcedure = tStepUp.procedure.use(({ ctx, next }) => {
+const stepUpSessionProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
@@ -442,20 +465,32 @@ const stepUpSessionProcedure = tStepUp.procedure.use(({ ctx, next }) => {
   return next({ ctx: { ...ctx, session: ctx.session } });
 });
 
-const stepUpRouter = tStepUp.router({
-  // Role change (the 5-5 representative) — step-up-guarded. On success it audits its
-  // consequent action, so a granted mutation writes TWO events (grant + action).
-  changeRole: stepUpGuardedProcedure("role.change").mutation(({ ctx }) => {
-    ctx.recordConsequentAudit({
-      action: "admin.role_change",
-      actor: ctx.session.user.id,
-    });
-    return { changed: true };
-  }),
-  // Invitation creation (the 5-6 representative) — step-up-guarded.
+export const stepUpRouter = t.router({
+  // Role change (a representative dangerous mutation) — admin-gated + step-up-guarded.
+  // On success it audits its consequent action (resolved fail-closed BEFORE the
+  // write), so a granted mutation writes TWO events (grant + action).
+  changeRole: stepUpGuardedProcedure("role.change").mutation(
+    async ({ ctx }) => {
+      const recordConsequentAudit = requireSink(
+        ctx.recordConsequentAudit,
+        "recordConsequentAudit"
+      );
+      await recordConsequentAudit({
+        action: "admin.role_change",
+        actor: ctx.session.user.id,
+      });
+      return { changed: true };
+    }
+  ),
+  // Invitation creation (a representative dangerous mutation) — admin-gated +
+  // step-up-guarded.
   createInvitation: stepUpGuardedProcedure("invite.create").mutation(
-    ({ ctx }) => {
-      ctx.recordConsequentAudit({
+    async ({ ctx }) => {
+      const recordConsequentAudit = requireSink(
+        ctx.recordConsequentAudit,
+        "recordConsequentAudit"
+      );
+      await recordConsequentAudit({
         action: "admin.invitation_created",
         actor: ctx.session.user.id,
       });

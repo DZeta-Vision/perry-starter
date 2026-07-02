@@ -1,4 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+  type AdminAlertNotification,
+  evaluateLockoutAlert,
+} from "@perry-starter/api/admin-alert";
+import { makeAdminSinks } from "@perry-starter/api/admin-sinks";
+import type {
+  AuditWriteInput,
+  AuditWriter,
+} from "@perry-starter/api/audit-log";
 import { buildLockoutResponse } from "@perry-starter/api/lockout-envelope";
 import {
   DEFAULT_LOCKOUT_THRESHOLDS,
@@ -13,13 +22,14 @@ import {
 import {
   configureLockoutRecorder,
   lockoutCounterKey,
-  recordLoginFailure,
 } from "@perry-starter/auth/lockout-seam";
 import {
   isCredentialFailure,
   normalizeAccountSubject,
 } from "@perry-starter/auth/login-outcome";
 import { verifyTurnstileToken } from "@perry-starter/auth/turnstile";
+import { type SurrealAuth, sql } from "@perry-starter/data/surreal-http";
+import { scrubSecrets } from "@perry-starter/env/scrub";
 
 // The strongly-consistent Durable-Object lockout counter (SQLite-backed). Cloudflare
 // routes every RPC for a given key-name to ONE instance and SERIALIZES them, so the
@@ -199,18 +209,96 @@ export const assessLoginLockout = async (
   return null;
 };
 
-// Record a failed login against BOTH perimeters (per-account normalized + per-IP)
-// through the shared seam -> the DO counters. Called ONLY after better-auth reports a
-// genuine CREDENTIAL failure (see `isCredentialFailure`) — never a verification-wall
-// 403, so a correct-password-but-unverified owner never accrues a strike. Skips the
-// IP perimeter when the platform gave no client IP (no shared `ip:` counter).
-export const recordFailedLogin = (
-  attempt: Pick<LoginLockoutAttempt, "email" | "remoteip">
-): void => {
-  recordLoginFailure(normalizeAccountSubject(attempt.email), "account");
+// The SurrealDB forwarder credential this Worker needs to append the admin-alert
+// audit event (the same runtime binding the mounted admin surface + cleanup use).
+export interface AdminAlertEnv {
+  readonly SURREAL_DB: string;
+  readonly SURREAL_NS: string;
+  readonly SURREAL_PASS: string;
+  readonly SURREAL_URL: string;
+  readonly SURREAL_USER: string;
+}
+
+// The two admin-alert effects, INJECTED so the decision is exercised without a live
+// DB or channel: the forwarder-backed audit append and the notification emit. The
+// delivery CHANNEL (email / in-app / webhook) is an unspecified host seam — the
+// default emits a structured, secret-scrubbed log line so the alert is observable
+// today; a real channel is injected here (documented deferral).
+export interface AdminAlertSinks {
+  readonly notify: (notification: AdminAlertNotification) => void;
+  readonly writeAudit: (
+    input: AuditWriteInput,
+    writer: AuditWriter
+  ) => Promise<void>;
+}
+
+const emitAdminAlertLog = (notification: AdminAlertNotification): void => {
+  console.warn(
+    JSON.stringify(scrubSecrets({ event: "admin.alert", ...notification }))
+  );
+};
+
+// Build the forwarder-backed sinks from the Worker's runtime SurrealDB binding —
+// the same post-auth forwarder shape the mounted admin surface + scheduled cleanup
+// already use (SurrealDB-over-HTTP via native fetch, never a raw SDK).
+const buildAdminAlertSinks = (env: AdminAlertEnv): AdminAlertSinks => {
+  const auth: SurrealAuth = {
+    kind: "basic",
+    pass: env.SURREAL_PASS,
+    user: env.SURREAL_USER,
+  };
+  const forward = (query: string, vars?: Record<string, string>) =>
+    sql(env.SURREAL_URL, env.SURREAL_NS, env.SURREAL_DB, auth, query, vars);
+  const { writeAudit } = makeAdminSinks(forward);
+  return { notify: emitAdminAlertLog, writeAudit };
+};
+
+// Record a failed login against BOTH perimeters via the authoritative DO counters,
+// capturing the post-increment ACCOUNT count so a threshold-cross fires the admin
+// alert exactly once. Called ONLY after better-auth reports a genuine CREDENTIAL
+// failure (`isCredentialFailure`) — never a verification-wall 403. Skips the IP
+// perimeter when the platform gave no client IP. On a boundary cross it (a) appends
+// the enumeration-safe audit event through the forwarder-backed `writeAudit` and
+// (b) emits the admin notification through the injected channel.
+export const recordFailedLoginWithAlert = async (
+  env: AdminAlertEnv & LockoutEnv,
+  attempt: Pick<LoginLockoutAttempt, "email" | "remoteip">,
+  sinks?: AdminAlertSinks,
+  thresholds: LockoutThresholds = DEFAULT_LOCKOUT_THRESHOLDS
+): Promise<void> => {
+  const account = normalizeAccountSubject(attempt.email);
+  // Await the account increment so the exact post-increment count drives the
+  // fire-once decision (the strongly-consistent DO is the authority).
+  const accountCount = await env.LOCKOUT.getByName(
+    lockoutCounterKey({ kind: "account", subject: account })
+  ).recordFailure(thresholds);
   if (attempt.remoteip !== undefined && attempt.remoteip !== "") {
-    recordLoginFailure(attempt.remoteip, "ip");
+    env.LOCKOUT.getByName(
+      lockoutCounterKey({ kind: "ip", subject: attempt.remoteip })
+    )
+      .recordFailure(thresholds)
+      .catch(() => undefined);
   }
+
+  const decision = evaluateLockoutAlert(
+    accountCount,
+    { kind: "account", subject: account },
+    thresholds,
+    { ip: attempt.remoteip ?? "unknown" }
+  );
+  if (!decision.fire) {
+    return;
+  }
+  const resolved = sinks ?? buildAdminAlertSinks(env);
+  // The immutable audit append is the durable record; a transient write failure
+  // must not break the login response, so it is caught + surfaced structurally, not
+  // thrown. The DO count already recorded the escalation regardless.
+  try {
+    await resolved.writeAudit(decision.audit, { kind: "system" });
+  } catch {
+    console.error(JSON.stringify({ event: "admin.alert.audit_failed" }));
+  }
+  resolved.notify(decision.notification);
 };
 
 // Reset BOTH perimeters on a SUCCESSFUL sign-in — a real owner proving the

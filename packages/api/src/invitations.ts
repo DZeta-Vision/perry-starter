@@ -29,9 +29,11 @@ import type { DangerousAction } from "@perry-starter/auth/step-up";
 import type { StepUpGrantStore } from "@perry-starter/auth/step-up-store";
 import { type AppRole, appRoleSchema } from "@perry-starter/db/shapes/identity";
 import type { Invitation } from "@perry-starter/db/shapes/invitation";
-import { initTRPC, TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { requireSink } from "./fail-closed";
+import { t } from "./index";
 import {
   type InvitationOutcome,
   invitationSurfaceResponse,
@@ -84,7 +86,7 @@ export interface InvitationContext {
   readonly recordConsequentAudit: (event: {
     readonly actor: string;
     readonly action: string;
-    readonly target: string;
+    readonly target?: string;
   }) => void;
   // A failed step-up routes through the SAME shared per-subject lockout seam as a
   // failed login (one counter).
@@ -119,20 +121,10 @@ export interface InvitationContext {
   readonly stepUpToken?: string;
 }
 
-const codeForError = (error: unknown): string | undefined => {
-  if (error instanceof TRPCError) {
-    const cause = error.cause as { code?: string } | undefined;
-    return cause?.code ?? error.code;
-  }
-  return;
-};
-
-const tInvitation = initTRPC.context<InvitationContext>().create({
-  errorFormatter: ({ shape, error }) => ({
-    ...shape,
-    data: { ...shape.data, code: codeForError(error) ?? shape.data.code },
-  }),
-});
+// The structural subset of the unified context the invitation resolvers read; every
+// injected sink is optional so a tier that has not wired the privileged forwarder
+// FAILS CLOSED at use (`requireSink`) rather than silently no-op'ing a write.
+type InvitationResolverCtx = Partial<InvitationContext>;
 
 const GENERIC_FORBIDDEN = "Insufficient role for this scope";
 
@@ -149,7 +141,7 @@ const stepUpRequired = (): never => {
 // and throws STEP_UP_REQUIRED on the challenge/rejection; on a rejection it also
 // routes through the shared lockout seam. It NEVER touches the actor's session.
 const consumeStepUp = (
-  ctx: InvitationContext,
+  ctx: InvitationResolverCtx,
   action: DangerousAction
 ): void => {
   if (!ctx.session) {
@@ -160,25 +152,26 @@ const consumeStepUp = (
   }
   const actor = ctx.session.user.id;
   if (ctx.stepUpToken === undefined) {
-    ctx.recordStepUpAudit({ action, actor, outcome: "challenged" });
+    ctx.recordStepUpAudit?.({ action, actor, outcome: "challenged" });
     stepUpRequired();
   }
-  const result = ctx.stepUpStore.verifyAndConsume({
+  const store = requireSink(ctx.stepUpStore, "stepUpStore");
+  const result = store.verifyAndConsume({
     action,
-    now: ctx.now,
+    now: ctx.now ?? Date.now(),
     sessionId: ctx.session.id,
     token: ctx.stepUpToken,
   });
   if (!result.granted) {
-    ctx.recordStepUpAudit({ action, actor, outcome: "rejected" });
-    ctx.recordLockoutFailure(actor);
+    ctx.recordStepUpAudit?.({ action, actor, outcome: "rejected" });
+    ctx.recordLockoutFailure?.(actor);
     stepUpRequired();
   }
-  ctx.recordStepUpAudit({ action, actor, outcome: "granted" });
+  ctx.recordStepUpAudit?.({ action, actor, outcome: "granted" });
 };
 
 // Session-only base: narrows the session non-null for downstream legs.
-const sessionProcedure = tInvitation.procedure.use(({ ctx, next }) => {
+const sessionProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
@@ -238,7 +231,7 @@ const rejectRoleVerdict = (
 // Mint + persist a fresh invitation and dispatch its email. Shared by create and
 // resend. Returns the internal outcome (never encoded into the response).
 const issueInvitation = async (
-  ctx: InvitationContext,
+  ctx: InvitationResolverCtx,
   input: z.infer<typeof issueInput>,
   outcome: InvitationOutcome
 ): Promise<InvitationOutcome> => {
@@ -258,15 +251,21 @@ const issueInvitation = async (
   const organizationId = input.organizationId ?? null;
   const token = mintInvitationToken();
   const tokenHash = await hashToken(token);
-  await ctx.persistInvitation({
+  await requireSink(
+    ctx.persistInvitation,
+    "persistInvitation"
+  )({
     email: input.email,
-    expiresAt: new Date(expiresAt(ctx.now)).toISOString(),
+    expiresAt: new Date(expiresAt(ctx.now ?? Date.now())).toISOString(),
     invitedBy: ctx.session.user.id,
     organizationId,
     role: input.role,
     tokenHash,
   });
-  await ctx.sendInvitationEmail({
+  await requireSink(
+    ctx.sendInvitationEmail,
+    "sendInvitationEmail"
+  )({
     locale: input.locale,
     to: input.email,
     token,
@@ -274,7 +273,7 @@ const issueInvitation = async (
   return outcome;
 };
 
-export const invitationRouter = tInvitation.router({
+export const invitationRouter = t.router({
   // Create a pending invitation: admin-gated + step-up-guarded + audited. The
   // resolver mints a single-use token, persists the invitation row ONLY (never a
   // user row — no half-formed privileged account), emails the token, and audits
@@ -288,7 +287,7 @@ export const invitationRouter = tInvitation.router({
     .input(issueInput)
     .mutation(async ({ ctx, input }): Promise<SurfaceResponse> => {
       const outcome = await issueInvitation(ctx, input, "created");
-      ctx.recordConsequentAudit({
+      ctx.recordConsequentAudit?.({
         action: "admin.invitation_created",
         actor: ctx.session.user.id,
         target: input.email,
@@ -306,12 +305,15 @@ export const invitationRouter = tInvitation.router({
     })
     .input(issueInput)
     .mutation(async ({ ctx, input }): Promise<SurfaceResponse> => {
-      await ctx.revokePriorInvitations({
+      await requireSink(
+        ctx.revokePriorInvitations,
+        "revokePriorInvitations"
+      )({
         email: input.email,
         organizationId: input.organizationId ?? null,
       });
       const outcome = await issueInvitation(ctx, input, "resent");
-      ctx.recordConsequentAudit({
+      ctx.recordConsequentAudit?.({
         action: "admin.invitation_resent",
         actor: ctx.session.user.id,
         target: input.email,
@@ -324,11 +326,14 @@ export const invitationRouter = tInvitation.router({
   revokeInvitation: adminProcedure
     .input(revokeInput)
     .mutation(async ({ ctx, input }): Promise<SurfaceResponse> => {
-      await ctx.revokePriorInvitations({
+      await requireSink(
+        ctx.revokePriorInvitations,
+        "revokePriorInvitations"
+      )({
         email: input.email,
         organizationId: input.organizationId ?? null,
       });
-      ctx.recordConsequentAudit({
+      ctx.recordConsequentAudit?.({
         action: "admin.invitation_revoked",
         actor: ctx.session.user.id,
         target: input.email,
@@ -342,29 +347,39 @@ export const invitationRouter = tInvitation.router({
   // token fails closed (no provision). The response is the ONE neutral envelope
   // regardless of the verdict, so acceptance is enumeration-silent and reveals
   // nothing about the token or the email.
-  acceptInvitation: tInvitation.procedure
+  acceptInvitation: t.procedure
     .input(acceptInput)
     .mutation(async ({ ctx, input }): Promise<SurfaceResponse> => {
+      const now = ctx.now ?? Date.now();
       const tokenHash = await hashToken(input.token);
-      const invitation = await ctx.loadInvitationByTokenHash(tokenHash);
+      const invitation = await requireSink(
+        ctx.loadInvitationByTokenHash,
+        "loadInvitationByTokenHash"
+      )(tokenHash);
       const verdict = evaluateInvitationAcceptance({
         invitation,
-        now: ctx.now,
+        now,
         tokenMatches:
           invitation !== null && invitation.token_hash === tokenHash,
       });
       if (verdict === "ok" && invitation) {
-        await ctx.provisionInvitedAccount({
+        await requireSink(
+          ctx.provisionInvitedAccount,
+          "provisionInvitedAccount"
+        )({
           email: invitation.email,
           organizationId: invitation.organization_id,
           role: invitation.role,
         });
-        const accepted = acceptInvitationRow(invitation, ctx.now);
-        await ctx.markInvitationAccepted({
-          acceptedAt: accepted.accepted_at ?? new Date(ctx.now).toISOString(),
+        const accepted = acceptInvitationRow(invitation, now);
+        await requireSink(
+          ctx.markInvitationAccepted,
+          "markInvitationAccepted"
+        )({
+          acceptedAt: accepted.accepted_at ?? new Date(now).toISOString(),
           tokenHash,
         });
-        ctx.recordConsequentAudit({
+        ctx.recordConsequentAudit?.({
           action: "admin.invitation_accepted",
           actor: invitation.email,
           target: invitation.email,

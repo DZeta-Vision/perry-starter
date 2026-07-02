@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { preflightBindCheck } from "./bind-check";
 import { createDaemonApp } from "./create-daemon-app";
 import { registerDocumentsRead } from "./documents-read";
+import { reportDaemonError } from "./sentry-reporter";
 import { startSupervisor } from "./supervisor";
 
 // The daemon compile entry: preflight the UI port, supervise the `surreal`
@@ -56,5 +57,9 @@ const main = async (): Promise<void> => {
 
 main().catch((error: unknown) => {
   process.stdout.write(`daemon failed to start: ${String(error)}\n`);
+  // Report the startup failure via the hand-rolled Sentry envelope (structured
+  // stderr always; ingest POST when a DSN is configured) — never re-throwing.
+  const asError = error instanceof Error ? error : new Error(String(error));
+  reportDaemonError(asError).catch(() => undefined);
   process.exitCode = 1;
 });
